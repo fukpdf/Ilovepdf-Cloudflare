@@ -75,132 +75,26 @@ const Flow = {
     if (!html || !html.trim()) return;
     this.result = { html, ts: Date.now() };
 
-    // Persist for refresh-survival: store HTML in sessionStorage; if the
-    // download anchor uses a blob: URL (client-side tools), also stash the
-    // blob in IndexedDB so we can hand the user a fresh URL after reload.
-    persistFlowState();
-    captureResultBlob(area);
-
-    // Phase 3: record this download in the recent-downloads metadata store.
-    try {
-      if (window.SessionPersist && currentTool) {
-        const _dlA = area.querySelector('a[download]');
-        if (_dlA) {
-          window.SessionPersist.saveDownload({
-            slug: Flow.baseSlug(),
-            name: _dlA.getAttribute('download') || 'download',
-            size: 0,
-          });
-        }
-      }
-    } catch (_) {}
-
     this.navTo('download');
   },
 
   reset() {
     this.result = null;
     this.step = 'upload';
-    if (window.ToolState) ToolState.clear(this.baseSlug());
+    releaseSelectedFiles();
+    if (window.ToolState) ToolState.clearAfterDelivery(this.baseSlug());
   },
 };
 
-// ── PERSISTENCE BRIDGE ────────────────────────────────────────────────────
-// Mirror the in-memory Flow state to sessionStorage + IndexedDB after every
-// meaningful change so a refresh / direct nav doesn't lose work.
-
-function persistFlowState() {
-  if (!window.ToolState || !currentTool) return;
-  const slug = Flow.baseSlug();
-  ToolState.save(slug, {
-    step: Flow.step,
-    files: selectedFiles.map(w => ({
-      id: w.id,
-      name: w.file && w.file.name,
-      size: w.file && w.file.size,
-      type: w.file && w.file.type,
-      rotation: w.rotation || 0,
-    })),
-    result: Flow.result ? {
-      html: Flow.result.html,
-      ts: Flow.result.ts,
-    } : null,
-  });
-  // Also persist the actual file blobs (idempotent put, keyed by file.id).
-  selectedFiles.forEach(w => {
-    if (w.file && w.id) ToolState.putBlob(slug, 'file:' + w.id, w.file);
-  });
-  // Phase 3: update session resume pointer + snapshot current tool options.
-  try {
-    if (window.SessionPersist) {
-      window.SessionPersist.saveResume(slug, Flow.step);
-      const _opts = window.SessionPersist.readDomOptions(currentTool);
-      if (Object.keys(_opts).length) window.SessionPersist.saveOptions(slug, _opts);
-    }
-  } catch (_) {}
-}
-
-// Find a download anchor with a blob: href in the result area, fetch the
-// blob, and store it in IDB so we can re-issue a working URL after refresh.
-async function captureResultBlob(scope) {
-  if (!window.ToolState || !currentTool) return;
-  const slug = Flow.baseSlug();
-  const a = scope.querySelector('a[download][href^="blob:"]');
-  if (!a) return;
-  try {
-    const res  = await fetch(a.getAttribute('href'));
-    const blob = await res.blob();
-    await ToolState.putBlob(slug, 'result', blob);
-    // Also stash the original filename so we can rebuild the anchor on hydrate.
-    const fname = a.getAttribute('download') || 'download';
-    ToolState.save(slug, {
-      ...(ToolState.load(slug) || {}),
-      resultFilename: fname,
-    });
-  } catch (_) { /* non-fatal — user can re-process */ }
-}
-
-// Rebuild selectedFiles from saved state. Returns a promise that resolves
-// once IndexedDB lookups complete (or fails fast if no blob is recoverable).
+// Old versions persisted source/output blobs for refresh recovery. Purge any
+// such legacy state at startup; the current flow keeps files in memory only.
 async function hydrateFlowState() {
   if (!window.ToolState || !currentTool) return false;
-  const slug  = Flow.baseSlug();
-  const state = ToolState.load(slug);
-  if (!state) return false;
-
-  // Re-attach files from IDB blobs.
-  if (Array.isArray(state.files) && state.files.length) {
-    const rebuilt = [];
-    for (const meta of state.files) {
-      const blob = await ToolState.getBlob(slug, 'file:' + meta.id);
-      if (!blob) { rebuilt.length = 0; break; }            // can't recover → start over
-      const f = new File([blob], meta.name || 'file', { type: meta.type || blob.type });
-      rebuilt.push({ file: f, rotation: meta.rotation || 0, id: meta.id });
-    }
-    selectedFiles = rebuilt;
-  }
-
-  // Re-attach result HTML, swapping any stale blob: hrefs for a fresh URL
-  // pointing at the IDB-stored result blob.
-  if (state.result && state.result.html) {
-    let html = state.result.html;
-    const resultBlob = await ToolState.getBlob(slug, 'result');
-    if (resultBlob) {
-      // Track via ObjectURLRegistry so it is revoked on memory pressure or pagehide.
-      const fresh = window.ObjectURLRegistry
-        ? window.ObjectURLRegistry.create(resultBlob, 'hydrated-result')
-        : URL.createObjectURL(resultBlob);
-      html = ToolState.rewriteBlobHrefs(html, fresh);
-      // Schedule revocation after 30 min (ample time for the user to download).
-      setTimeout(() => {
-        try {
-          window.ObjectURLRegistry ? window.ObjectURLRegistry.revoke(fresh) : URL.revokeObjectURL(fresh);
-        } catch (_) {}
-      }, 30 * 60 * 1000);
-    }
-    Flow.result = { html, ts: state.result.ts };
-  }
-  return true;
+  try { await window.ToolState.clearAfterDelivery(Flow.baseSlug()); } catch (_) {}
+  selectedFiles = [];
+  Flow.result = null;
+  Flow.step = 'upload';
+  return false;
 }
 
 function setMetaForStep(step) {
@@ -1232,12 +1126,10 @@ async function runToolPreviewPreparation(tool, runId, startedAt, minimumMs) {
   const file = selectedFiles[0] && selectedFiles[0].file;
   if (!file) { renderStandardPreviewStep(tool); return; }
 
-  const engineWarm = (window.BrowserTools && typeof window.BrowserTools.prewarm === 'function')
-    ? window.BrowserTools.prewarm(tool.id)
-    : Promise.resolve({ warmed: false });
-  const previewWarm = (window.PdfPreview && typeof window.PdfPreview.loadPdfJs === 'function' && tool.group !== 'image')
-    ? window.PdfPreview.loadPdfJs()
-    : Promise.resolve();
+  const engineWarm = window.ToolModuleRegistry &&
+    typeof window.ToolModuleRegistry.prepare === 'function'
+      ? window.ToolModuleRegistry.prepare(tool.id, selectedFiles.map(function (entry) { return entry.file; }))
+      : Promise.resolve({ ok: false, code: 'LOCAL_ENGINE_UNAVAILABLE' });
   const isImage = tool.group === 'image';
   const stages = [
     { at: 0, stage: 'read', title: 'Reading your ' + (isImage ? 'image' : 'file'), detail: 'Checking the selected file before the preview opens.' },
@@ -1263,7 +1155,20 @@ async function runToolPreviewPreparation(tool, runId, startedAt, minimumMs) {
     requestAnimationFrame(tick);
   });
   if (runId !== _cropUploadRun) return;
-  await Promise.all([engineWarm, previewWarm]);
+  let preparation;
+  try {
+    preparation = await engineWarm;
+    if (preparation && preparation.ok && tool.group !== 'image' &&
+        window.PdfPreview && typeof window.PdfPreview.loadPdfJs === 'function') {
+      await window.PdfPreview.loadPdfJs();
+    }
+  } catch (error) {
+    preparation = {
+      ok: false,
+      message: error && error.message ? error.message : 'The local tool could not be prepared.',
+    };
+  }
+  if (runId !== _cropUploadRun) return;
   const remaining = Math.max(0, minimumMs - (Date.now() - startedAt));
   if (remaining) await new Promise(resolve => setTimeout(resolve, remaining));
   if (runId !== _cropUploadRun) return;
@@ -1271,6 +1176,17 @@ async function runToolPreviewPreparation(tool, runId, startedAt, minimumMs) {
   await new Promise(resolve => setTimeout(resolve, 220));
   if (runId !== _cropUploadRun) return;
   renderStandardPreviewStep(tool);
+  if (!preparation || !preparation.ok) {
+    const processButton = document.getElementById('process-btn');
+    if (processButton) processButton.disabled = true;
+    showStatus(
+      'error',
+      'This tool is not ready for local processing',
+      preparation && preparation.code === 'LOCAL_ENGINE_UNAVAILABLE'
+        ? 'A verified browser-only processor is not available for this tool yet. Your file was not sent anywhere.'
+        : (preparation && preparation.message) || 'The browser could not prepare this tool. Your file was not sent anywhere.'
+    );
+  }
 }
 function renderStandardPreviewStep(tool) {
   const container = document.getElementById('tool-content');
@@ -1773,10 +1689,43 @@ async function handleFiles(fileList) {
   if (!fileList || fileList.length === 0) return;
 
   const incoming = Array.from(fileList);
+  if (!currentTool) return;
+
+  const accepted = String(currentTool.acceptedFiles || '')
+    .split(',')
+    .map(function (value) { return value.trim().toLowerCase(); })
+    .filter(Boolean);
+  const mimeExtensions = {
+    'application/pdf': '.pdf',
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+  };
+  const invalidFile = incoming.find(function (file) {
+    const name = String(file.name || '').toLowerCase();
+    const mimeExt = mimeExtensions[String(file.type || '').toLowerCase()];
+    return accepted.length && !accepted.some(function (extension) {
+      return name.endsWith(extension) || mimeExt === extension;
+    });
+  });
+  if (invalidFile) {
+    showStatus(
+      'error',
+      _tp('status.invalid_input', 'Invalid input'),
+      _tp('status.invalid_input_msg', 'Please choose a file type supported by this tool.')
+    );
+    return;
+  }
+  if (currentTool.multipleFiles === false && incoming.length > 1) {
+    showStatus('error', 'Choose one file', 'This tool accepts one file at a time.');
+    return;
+  }
 
   // Validate immediately at selection time so an unsupported file never enters
-  // the upload/preview pipeline. Keep the same BrowserTools validator used by
-  // processing; this is only an early UI guard.
+  // the preparation pipeline when the local engine is already available.
   if (window.BrowserTools && typeof window.BrowserTools.validateInputFiles === 'function') {
     const validation = window.BrowserTools.validateInputFiles(
       incoming,
@@ -1798,11 +1747,9 @@ async function handleFiles(fileList) {
   if (currentTool.multipleFiles) {
     selectedFiles = [...selectedFiles, ...wrapped];
   } else {
+    releaseSelectedFiles();
     selectedFiles = [wrapped[0]];
   }
-
-  // Persist immediately so a refresh on /preview keeps the file blobs.
-  persistFlowState();
 
   // All file-upload tools use the same Crop-PDF reference preparation journey;
   // tool-specific processing and preview controls remain isolated.
@@ -1867,6 +1814,54 @@ function closePageOrganizer() {
   const list = document.getElementById('files-list');
   if (list) list.style.display = '';
 }
+
+function releaseSelectedFiles() {
+  const previous = selectedFiles;
+  selectedFiles = [];
+  previous.forEach(function (entry) {
+    if (!entry || !entry._thumbUrl) return;
+    try {
+      if (window.ObjectURLRegistry) window.ObjectURLRegistry.revoke(entry._thumbUrl);
+      else URL.revokeObjectURL(entry._thumbUrl);
+    } catch (_) {}
+  });
+  closePageOrganizer();
+  document.querySelectorAll('#tool-content input[type="file"]').forEach(function (input) {
+    try { input.value = ''; } catch (_) {}
+  });
+}
+
+function releaseToolMemory(reason, outputUrl) {
+  releaseSelectedFiles();
+  try {
+    if (_activeMountedModule && typeof _activeMountedModule.destroy === 'function') {
+      _activeMountedModule.destroy();
+    }
+  } catch (_) {}
+  _activeMountedModule = null;
+  Flow.result = null;
+
+  const slug = currentTool ? Flow.baseSlug() : '';
+  if (slug && window.ToolState && typeof window.ToolState.clearAfterDelivery === 'function') {
+    window.ToolState.clearAfterDelivery(slug).catch(function () {});
+  }
+
+  if (reason === 'downloaded') {
+    if (outputUrl && String(outputUrl).indexOf('blob:') === 0) {
+      try {
+        if (window.ObjectURLRegistry) window.ObjectURLRegistry.revoke(outputUrl);
+        else URL.revokeObjectURL(outputUrl);
+      } catch (_) {}
+    }
+    const area = document.getElementById('result-area');
+    if (area) {
+      area.innerHTML = '<div class="status-card status-success" role="status"><i data-lucide="check-circle-2"></i><div><div class="status-card-title">Download started</div><div class="status-card-msg">The page released its source and result file references. Select another file to continue.</div></div></div>';
+      if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+    }
+  }
+}
+
+window.releaseToolMemory = releaseToolMemory;
 
 function cryptoId() {
   return 'f' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -2291,26 +2286,6 @@ async function processFile() {
       }
     }
 
-    const formData = new FormData();
-
-    if (currentTool.multipleFiles) {
-      const isImgInput = currentTool.group === 'image' ||
-                         currentTool.id === 'scan-to-pdf' ||
-                         currentTool.id === 'jpg-to-pdf';
-      const field = isImgInput ? 'images' : 'pdfs';
-      selectedFiles.forEach(e => formData.append(field, e.file));
-    } else {
-      const field = currentTool.group === 'image' ? 'image' : 'pdf';
-      formData.append(field, selectedFiles[0].file);
-    }
-
-    // Per-file rotations (server may use; safe to ignore otherwise)
-    formData.append('rotations', JSON.stringify(selectedFiles.map(e => e.rotation)));
-
-    (currentTool.options || []).forEach(opt => {
-      const el = document.getElementById(`opt-${opt.id}`);
-      if (el && el.value.trim() !== '') formData.append(opt.id, el.value.trim());
-    });
     showProcessing(_tp('steps.processing_file', 'Processing your file…'), _tp('steps.usual_time', 'This usually takes only a few seconds.'));
     if (processBtn) processBtn.disabled = true;
 
@@ -2867,6 +2842,7 @@ function attachDownloadBurst(scope) {
   root.querySelectorAll('.dl-burst-trigger:not([data-burst-bound])').forEach((btn) => {
     btn.dataset.burstBound = '1';
     btn.addEventListener('click', (e) => {
+      const outputUrl = btn.href;
       const rect = btn.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       const cy = rect.top  + rect.height / 2;
@@ -2874,22 +2850,9 @@ function attachDownloadBurst(scope) {
       const wrap = btn.closest('.dl-pulse');
       if (wrap) wrap.classList.add('dl-fired');
       // Don't preventDefault — the actual download must still fire.
-      // Cleanup is deliberately delayed so the browser has time to start the
-      // download, then removes only this tool's temporary source/result state.
-      try {
-        if (window.ToolState && currentTool) {
-          const slug = Flow.baseSlug();
-          setTimeout(() => {
-            try {
-              if (window.ToolState.clearAfterDelivery) {
-                window.ToolState.clearAfterDelivery(slug);
-              } else {
-                window.ToolState.clear(slug);
-              }
-            } catch (_) {}
-          }, 5000);
-        }
-      } catch (_) {}
+      // Give the browser time to start the download, then release the source
+      // files, generated Blob URL, preview URLs, and per-tool state.
+      setTimeout(() => releaseToolMemory('downloaded', outputUrl), 5000);
     });
   });
 }
@@ -3586,10 +3549,9 @@ window.loadToolPage = function loadToolPage(path) {
     return;
   }
 
-  // Reset in-progress state
-  selectedFiles = [];
-  if (pageOrganizer) { try { pageOrganizer.destroy(); } catch (_) {} pageOrganizer = null; }
-  Flow.result = null;
+  // Switching tools releases previous file references before rendering the
+  // next shared tool view. No previous input/output is retained for reuse.
+  releaseToolMemory('tool-change');
   Flow.step   = step;
 
   if (!tool) {

@@ -694,40 +694,6 @@
     return new Blob([best], { type: 'application/pdf' });
   }
 
-  async function postPdfOperation(endpoint, file, options) {
-    if (!file) throw new Error('Please select a PDF file.');
-    const form = new FormData();
-    form.append('pdf', file, file.name || 'document.pdf');
-    Object.entries(options || {}).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) form.append(key, String(value));
-    });
-
-    const response = await fetch(`/api/${endpoint}`, { method: 'POST', body: form });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error || `PDF ${endpoint} failed (${response.status}).`);
-    }
-    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-    if (!contentType.includes('application/pdf')) {
-      throw new Error(`PDF ${endpoint} returned an unexpected file type.`);
-    }
-    const blob = await response.blob();
-    if (blob.size < 500) throw new Error(`PDF ${endpoint} returned an empty file.`);
-    return blob;
-  }
-
-  // ── PROTECT PDF (server-side encryption) ──────────────────────────────────
-  async function protect(files, opts) {
-    const password = String((opts || {}).password || '').trim();
-    if (!password) throw new Error('Please enter a password to protect the PDF');
-    return postPdfOperation('protect', files[0], { password });
-  }
-
-  // ── UNLOCK PDF (server-side decryption) ───────────────────────────────────
-  async function unlock(files, opts) {
-    return postPdfOperation('unlock', files[0], { password: String((opts || {}).password || '') });
-  }
-
   // ── PDF -> JPG (basic, browser-side via pdfjs+canvas) ────────────────────
   // Renders every page to a JPG. Single-page → JPG blob. Multi-page → ZIP.
   async function pdfToJpg(files, opts) {
@@ -1170,11 +1136,6 @@
     page.drawLine({ start: { x: x - 4, y: y - 5 }, end: { x: x + tw + 4, y: y - 5 }, thickness: 0.6, color: rgb(0.4, 0.4, 0.4) });
     page.drawText(text, { x, y, size: fontSize, font, color: rgb(0.1, 0.1, 0.55) });
     return new Blob([await doc.save()], { type: 'application/pdf' });
-  }
-
-  // ── PHASE 2: REDACT PDF ──────────────────────────────────────────────────
-  async function redactPdf(files, opts) {
-    return postPdfOperation('redact', files[0], opts || {});
   }
 
   // ── Shared OCR line reconstructor ────────────────────────────────────────
@@ -3776,17 +3737,13 @@
         const ctxQuery = lastSentence ? lastSentence + ' ' + chunk : chunk;
         const apiQuery = ctxQuery.slice(0, 490); // MyMemory hard limit ~500 chars
         const langpair = `${sourceLang}|${targetLang}`;
-        const url      = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(apiQuery)}&langpair=${encodeURIComponent(langpair)}`;
-        const resp     = await fetch(url, { signal: AbortSignal.timeout(8000) });
-        const json     = await resp.json();
-        const t        = String(json?.responseData?.translatedText || '').trim();
-
-        if (t && t.toLowerCase() !== chunk.trim().toLowerCase()) {
-          translated.push(t);
-        } else {
-          failCount++;
-        }
-      } catch { failCount++; }
+        // Translation services receive extracted document text. That violates
+        // the local-only file boundary, so do not send text to a remote API.
+        throw new Error('local_translation_engine_unavailable');
+      } catch (error) {
+        if (error && error.message === 'local_translation_engine_unavailable') throw error;
+        failCount++;
+      }
 
       // Update context: last sentence (max 120 chars) for next chunk
       const sents = chunk.match(/[^.!?]+[.!?]+/g);
@@ -4510,8 +4467,6 @@
     'crop':          crop,
     'jpg-to-pdf':    imagesToPdf,
     'compress':      compress,
-    'protect':       protect,
-    'unlock':        unlock,
     'pdf-to-jpg':    pdfToJpg,
     'crop-image':    cropImage,
     'resize-image':  resizeImage,
@@ -4523,7 +4478,6 @@
     // ── Phase 2 ───────────────────────────────────────────────────────────
     'edit':               editPdf,
     'sign':               signPdf,
-    'redact':             redactPdf,
     // ── Phase 3 ───────────────────────────────────────────────────────────
     'pdf-to-word':        pdfToWord,
     'pdf-to-excel':       pdfToExcel,
@@ -4535,7 +4489,6 @@
     // ── Phase 5 ───────────────────────────────────────────────────────────
     'ai-summarize':       aiSummarize,
     // ── Phase 6 ───────────────────────────────────────────────────────────
-    'translate':          translatePdf,
     'workflow':           workflowPdf,
     'pdf-to-powerpoint':  pdfToPowerpoint,
     'powerpoint-to-pdf':  powerpointToPdf,
@@ -4550,24 +4503,56 @@
     'page-numbers', 'watermark', 'sign', 'edit', 'compare',
   ]);
 
-  // Crop-only warm-up hook used by the Crop PDF upload UI. This loads the
-  // exact pdf-lib dependency that the existing crop() handler uses, but does
-  // not execute processing or mutate the selected file. It is intentionally
-  // narrow so other tools keep their existing lazy-loading behavior.
+  // Warm only the selected tool's libraries while the shared preparation
+  // screen is visible. This never reads or uploads a document to a server.
   async function prewarm(toolId) {
-    if (toolId === 'merge') {
-      await loadPdfLib();
-      return { warmed: true, dependency: 'pdf-lib' };
-    }
-    if (toolId === 'crop') {
-      await loadWorkerPool();
-      return { warmed: true, dependency: 'pdf-worker + worker-pool' };
-    }
-    if (toolId === 'word-to-excel') {
-      await Promise.all([loadMammoth(), loadXlsx()]);
-      return { warmed: true, dependency: 'mammoth+xlsx' };
-    }
-    return { warmed: false };
+    const dependencies = {
+      merge: ['pdf-lib'],
+      split: ['pdf-lib'],
+      rotate: ['pdf-lib', 'worker-pool'],
+      organize: ['pdf-lib', 'worker-pool'],
+      crop: ['pdf-lib', 'worker-pool'],
+      compress: ['pdf-lib', 'pdfjs', 'worker-pool'],
+      'page-numbers': ['pdf-lib'],
+      watermark: ['pdf-lib'],
+      'jpg-to-pdf': ['pdf-lib'],
+      'pdf-to-jpg': ['pdfjs', 'jszip'],
+      'pdf-to-word': ['pdfjs', 'jszip', 'tesseract'],
+      'pdf-to-excel': ['pdfjs', 'xlsx'],
+      'pdf-to-powerpoint': ['pdfjs', 'pptxgen'],
+      'word-to-pdf': ['mammoth', 'html2pdf'],
+      'word-to-excel': ['mammoth', 'xlsx'],
+      'html-to-pdf': ['html2pdf'],
+      'powerpoint-to-pdf': ['jszip', 'pdf-lib'],
+      'excel-to-pdf': ['xlsx', 'pdf-lib'],
+      edit: ['pdf-lib'],
+      sign: ['pdf-lib'],
+      repair: ['pdf-lib'],
+      compare: ['pdf-lib', 'pdfjs'],
+      ocr: ['pdfjs', 'tesseract'],
+      'scan-to-pdf': ['pdf-lib', 'tesseract', 'jszip'],
+      'ai-summarize': ['pdfjs'],
+      workflow: ['pdf-lib', 'worker-pool'],
+      'background-remover': [],
+      'crop-image': [],
+      'resize-image': [],
+      'image-filters': [],
+    };
+    const loaders = {
+      'pdf-lib': loadPdfLib,
+      pdfjs: loadPdfJs,
+      jszip: loadJsZip,
+      mammoth: loadMammoth,
+      html2pdf: loadHtml2Pdf,
+      xlsx: loadXlsx,
+      pptxgen: loadPptxGen,
+      tesseract: loadTesseract,
+      'worker-pool': loadWorkerPool,
+    };
+    const required = dependencies[toolId];
+    if (!required) return { warmed: false, dependencies: [] };
+    await Promise.all(required.map(function (name) { return loaders[name](); }));
+    return { warmed: true, dependencies: required.slice() };
   }
 
   function supports(toolId) { return Object.prototype.hasOwnProperty.call(HANDLERS, toolId); }

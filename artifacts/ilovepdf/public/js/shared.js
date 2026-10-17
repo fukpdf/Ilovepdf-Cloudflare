@@ -46,17 +46,79 @@ function showSignupModal(file) {
 }
 function closeSignupModal() { /* auth modal removed */ }
 
+let _processingMessageTimer = null;
+let _processingMessageIndex = 0;
+const _processingMessages = [
+  'Handling your files with care…',
+  'Applying your settings locally…',
+  'Keeping your documents on this device…',
+  'Finishing the selected operation…',
+];
+
 function showProcessing(title, msg) {
-  const o = document.getElementById('processing-overlay');
-  if (!o) return;
-  if (title) document.getElementById('processing-title').textContent = title;
-  if (msg)   document.getElementById('processing-msg').textContent = msg;
-  o.classList.remove('hidden');
+  const root = document.getElementById('result-area') ||
+    document.getElementById('tool-content');
+  if (!root) return;
+
+  let card = document.getElementById('processing-inline-status');
+  if (!card) {
+    card = document.createElement('section');
+    card.id = 'processing-inline-status';
+    card.className = 'status-card status-loading processing-inline';
+    card.setAttribute('role', 'status');
+    card.setAttribute('aria-live', 'polite');
+    card.setAttribute('aria-atomic', 'true');
+    card.innerHTML = `
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="processing-inline-copy">
+        <div class="status-card-title" id="processing-title"></div>
+        <div class="status-card-msg" id="processing-msg"></div>
+        <div class="processing-bar" role="progressbar" aria-label="Processing locally" aria-valuemin="0" aria-valuemax="100">
+          <div class="processing-bar-fill"></div>
+        </div>
+      </div>`;
+    root.appendChild(card);
+    if (!document.getElementById('processing-inline-style')) {
+      const style = document.createElement('style');
+      style.id = 'processing-inline-style';
+      style.textContent = `
+        .processing-inline{display:flex;gap:14px;align-items:flex-start;padding:18px}
+        .processing-inline-copy{flex:1;min-width:0}
+        .processing-inline .processing-bar{height:6px;overflow:hidden;border-radius:99px;margin-top:12px;background:#e9edf5}
+        .processing-inline .processing-bar-fill{height:100%;width:38%;border-radius:inherit;background:currentColor;animation:iplv-processing-sweep 1.25s ease-in-out infinite alternate}
+        @keyframes iplv-processing-sweep{from{transform:translateX(-35%)}to{transform:translateX(170%)}}
+      `;
+      document.head.appendChild(style);
+    }
+  }
+
+  const titleNode = document.getElementById('processing-title');
+  const messageNode = document.getElementById('processing-msg');
+  if (titleNode) titleNode.textContent = title || 'Processing your file…';
+  if (messageNode) messageNode.textContent = msg || _processingMessages[0];
+  clearInterval(_processingMessageTimer);
+  _processingMessageIndex = 0;
+  _processingMessageTimer = setInterval(function () {
+    if (!document.getElementById('processing-inline-status')) {
+      clearInterval(_processingMessageTimer);
+      _processingMessageTimer = null;
+      return;
+    }
+    _processingMessageIndex = (_processingMessageIndex + 1) % _processingMessages.length;
+    const currentMessage = document.getElementById('processing-msg');
+    if (currentMessage) currentMessage.textContent = _processingMessages[_processingMessageIndex];
+  }, 1600);
+  // The legacy modal stays hidden; processing status is always inline.
+  const overlay = document.getElementById('processing-overlay');
+  if (overlay) overlay.classList.add('hidden');
   if (window.lucide) lucide.createIcons();
-  // Lightweight perf mark — used by observability / analytics
   try { performance.mark('iplv-process-start'); } catch (_) {}
 }
 function hideProcessing() {
+  clearInterval(_processingMessageTimer);
+  _processingMessageTimer = null;
+  const inlineStatus = document.getElementById('processing-inline-status');
+  if (inlineStatus) inlineStatus.remove();
   const o = document.getElementById('processing-overlay');
   if (o) o.classList.add('hidden');
   // Measure total processing wall-time and emit to analytics

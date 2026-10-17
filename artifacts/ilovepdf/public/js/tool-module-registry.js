@@ -7,6 +7,25 @@
   if (G.ToolModuleRegistry) return;
 
   var _modules = Object.create(null);
+  var _scriptPromises = Object.create(null);
+
+  function _loadScript(path) {
+    if (_scriptPromises[path]) return _scriptPromises[path];
+    _scriptPromises[path] = new Promise(function (resolve, reject) {
+      var script = document.createElement('script');
+      script.src = path;
+      script.async = true;
+      script.dataset.toolRuntime = '1';
+      script.onload = function () { resolve(); };
+      script.onerror = function () {
+        delete _scriptPromises[path];
+        script.remove();
+        reject(new Error('Unable to load local tool runtime.'));
+      };
+      document.head.appendChild(script);
+    });
+    return _scriptPromises[path];
+  }
 
   function _copyAccepted(tool) {
     return String(tool && tool.acceptedFiles || '')
@@ -29,9 +48,9 @@
       category: tool.category || null,
       group: tool.group || null,
       entry: special ? 'special-route' : 'tool-page',
-      capability: special ? 'special-route' : (execution && execution.processor ? 'browser-processor' : 'unavailable'),
+      capability: special ? 'special-route' : (execution && execution.processor ? 'browser-processor' : (browser ? 'unavailable' : 'pending')),
       processor: execution ? execution.processor : null,
-      execution: execution ? execution.execution : 'unavailable',
+      execution: execution ? execution.execution : (browser ? 'unavailable' : 'pending'),
       lazyLoad: true,
       independent: true,
       acceptedFiles: _copyAccepted(tool),
@@ -67,6 +86,56 @@
     return { ok: true, module: m };
   }
 
+  async function prepare(toolId, files) {
+    var tool = (Array.isArray(G.TOOLS) ? G.TOOLS : []).find(function (entry) {
+      return entry && entry.id === toolId;
+    });
+    if (!tool) return { ok: false, code: 'UNKNOWN_TOOL_MODULE' };
+
+    try {
+      if (!G.BrowserTools) {
+        await _loadScript('/js/browser-tools.js');
+      }
+      if (!G.BrowserTools || typeof G.BrowserTools.supports !== 'function') {
+        return { ok: false, code: 'LOCAL_ENGINE_UNAVAILABLE' };
+      }
+
+      register(tool);
+      if (!G.BrowserTools.supports(toolId)) {
+        return { ok: false, code: 'LOCAL_ENGINE_UNAVAILABLE' };
+      }
+
+      // Preview code is loaded only after the user selects a file. Image files
+      // use native browser decoding; PDF tools share these preview modules.
+      if (tool.group !== 'image') {
+        await Promise.all([
+          _loadScript('/js/live-preview.js'),
+          _loadScript('/js/page-organizer.js'),
+        ]);
+      }
+
+      // These optional editor/model bundles are scoped to the selected tool.
+      if (toolId === 'background-remover') {
+        await _loadScript('/js/bg-ai-engine.js');
+        await _loadScript('/js/bg-remover-pro.js');
+      } else if (toolId === 'edit') {
+        await _loadScript('/js/edit-pdf-pro.js');
+      }
+
+      var warmed = typeof G.BrowserTools.prewarm === 'function'
+        ? await G.BrowserTools.prewarm(toolId, files || [])
+        : { warmed: false };
+      register(tool);
+      return { ok: true, module: get(toolId), warmed: warmed };
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'LOCAL_ENGINE_PREPARATION_FAILED',
+        message: error && error.message ? error.message : 'The local tool could not be prepared.',
+      };
+    }
+  }
+
   function getAll() {
     return Object.keys(_modules).map(function (id) { return _modules[id]; });
   }
@@ -93,6 +162,7 @@
     getAll: getAll,
     audit: audit,
     activate: activate,
+    prepare: prepare,
   });
 
   // Register only metadata. No processor/engine is loaded here.

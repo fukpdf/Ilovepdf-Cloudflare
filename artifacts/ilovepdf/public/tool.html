@@ -613,8 +613,6 @@
   <script src="/js/pdf-pipeline/layout-graph.js"></script>
   <script src="/js/pdf-pipeline/docx-coordinate-engine.js"></script>
   <script src="/js/pdf-pipeline/fidelity-debug.js"></script>
-  <script src="/js/browser-tools.js"></script>
-  <script src="/js/browser-tool-runtime.js"></script>
   <!-- Phase 3 — Merge PDF Runtime Migration (additive, feature-flagged) -->
   <!-- Phase 2A: deferred — depends only on Phase 1-9 globals (SYNC); all globals       -->
   <!-- available before any defer fires. Document order preserved by defer. User cannot  -->
@@ -904,8 +902,6 @@
   <!-- Phase 8 Tier 5: Encrypted Memory Vault -->
   <script src="/js/runtime-memory-vault.js" defer></script>
 
-  <script src="/js/live-preview.js"></script>
-  <script src="/js/page-organizer.js"></script>
   <script src="/js/app-router.js"></script>
   <script integrity="sha384-wkxmY9HYHJVzx0oZ7k8stpLQ7g7ogSqBha75ozCZmxFadwtaIw5dzXKVWWfi9I36" crossorigin="anonymous" src="https://unpkg.com/lucide@0.474.0/dist/umd/lucide.min.js"></script>
   <script type="module" src="/js/firebase-init.js"></script>
@@ -915,9 +911,6 @@
   <!-- Shim: tool-page.js (legacy) calls these but the new chrome.js renders header/sidebar -->
   <script src="/js/chrome-shim.js"></script>
   <!-- AI Background Removal Engine (ONNX Runtime Web — u2netp / RMBG-1.4) -->
-  <script src="/js/bg-ai-engine.js" defer></script>
-  <script src="/js/bg-remover-pro.js" defer></script>
-  <script src="/js/edit-pdf-pro.js" defer></script>
   <script src="/js/tools-config.js?v=20261003-second-section-v2" defer></script>
   <!-- Phase 4 Unit 2: authoritative browser tool registry (identity/execution metadata) -->
   <script src="/js/tool-registry-runtime.js" defer></script>

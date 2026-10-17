@@ -1240,3 +1240,14 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   } catch (_) {}
 });
+
+// Load the shared-shell router on pages that use the common chrome. It swaps
+// only <main>, so the header/footer and their event listeners stay mounted.
+(function loadSharedNavigation() {
+  if (document.getElementById('shared-navigation-script')) return;
+  const script = document.createElement('script');
+  script.id = 'shared-navigation-script';
+  script.src = '/js/shared-navigation.js';
+  script.async = true;
+  document.head.appendChild(script);
+}());
