@@ -1,0 +1,1 @@
+- [Native addon compatibility](native-addon-compatibility.md) — check native modules against Node 24 and explicitly approve required pnpm install scripts.
