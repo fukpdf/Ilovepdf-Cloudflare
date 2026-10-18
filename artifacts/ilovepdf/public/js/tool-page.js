@@ -30,6 +30,16 @@ let _activeMountedModule = null;
 // to processing; cleared in the try/finally regardless of exit path.
 let _processingInFlight = false;
 let _cropUploadRun = 0;
+let _activeProcessingToken = null;
+let _toolMemoryEpoch = 0;
+
+// One-time migration cleanup: older versions could persist uploaded source
+// and result blobs in IndexedDB/session state. New sessions are memory-only.
+if (window.ToolState && typeof window.ToolState.clearAllFiles === 'function' &&
+    !window.__ILOVE_TOOL_FILE_STATE_PURGE) {
+  window.__ILOVE_TOOL_FILE_STATE_PURGE = window.ToolState.clearAllFiles()
+    .catch(function () { return false; });
+}
 
 // ── 3-STEP FLOW (Upload → Preview → Download) ─────────────────────────────
 // Routes:
@@ -1832,6 +1842,36 @@ function releaseSelectedFiles() {
 }
 
 function releaseToolMemory(reason, outputUrl) {
+  _toolMemoryEpoch++;
+  _cropUploadRun++;
+  if (_activeProcessingToken && typeof _activeProcessingToken.cancel === 'function') {
+    try { _activeProcessingToken.cancel(reason || 'tool-memory-released'); } catch (_) {}
+  }
+  if (currentTool && window.BrowserToolRuntime &&
+      typeof window.BrowserToolRuntime.cancel === 'function') {
+    try { window.BrowserToolRuntime.cancel(currentTool.id, reason || 'tool-memory-released'); } catch (_) {}
+  }
+  if (window.WorkerPool && typeof window.WorkerPool.terminateAll === 'function') {
+    try { window.WorkerPool.terminateAll(); } catch (_) {}
+  }
+  const livePreviewHost = document.getElementById('live-preview-host');
+  if (livePreviewHost && window.LivePreview &&
+      typeof window.LivePreview.unmount === 'function') {
+    try { window.LivePreview.unmount(livePreviewHost); } catch (_) {}
+  }
+
+  // Revoke any output URL still mounted in the tool view, including when the
+  // visitor leaves before clicking Download.
+  document.querySelectorAll('#tool-content [href^="blob:"], #tool-content [src^="blob:"]')
+    .forEach(function (node) {
+      var url = node.getAttribute('href') || node.getAttribute('src');
+      if (!url) return;
+      try {
+        if (window.ObjectURLRegistry) window.ObjectURLRegistry.revoke(url);
+        else URL.revokeObjectURL(url);
+      } catch (_) {}
+    });
+
   releaseSelectedFiles();
   try {
     if (_activeMountedModule && typeof _activeMountedModule.destroy === 'function') {
@@ -1842,7 +1882,10 @@ function releaseToolMemory(reason, outputUrl) {
   Flow.result = null;
 
   const slug = currentTool ? Flow.baseSlug() : '';
-  if (slug && window.ToolState && typeof window.ToolState.clearAfterDelivery === 'function') {
+  if (window.ToolState && typeof window.ToolState.clearAllFiles === 'function') {
+    window.ToolState.clearAllFiles().catch(function () {});
+  } else if (slug && window.ToolState &&
+      typeof window.ToolState.clearAfterDelivery === 'function') {
     window.ToolState.clearAfterDelivery(slug).catch(function () {});
   }
 
@@ -2101,38 +2144,67 @@ const OutputValidator = {
 async function tryWithRetry(toolId, files, opts) {
   const MAX_ATTEMPTS = 2;
   let lastErr;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    try {
-      if (attempt > 0) {
-        showProcessing(_tp('processing.retrying', 'Retrying processing…'), _tp('processing.retrying_msg', 'The browser worker is retrying the operation.'));
-        await new Promise(r => setTimeout(r, 700));
-      }
-      const registryTool = (window.ToolRegistry && typeof window.ToolRegistry.get === 'function')
-        ? window.ToolRegistry.get(toolId) : null;
-      if (registryTool && registryTool.execution === 'browser') {
-        if (!window.BrowserToolRuntime || typeof window.BrowserToolRuntime.execute !== 'function') {
-          throw new Error('BrowserToolRuntime is unavailable — canonical browser execution cannot continue');
+  const token = window.WorkerPool && typeof window.WorkerPool.CancelToken === 'function'
+    ? new window.WorkerPool.CancelToken()
+    : {
+        cancelled: false,
+        cancel: function (reason) {
+          if (this.cancelled) return;
+          this.cancelled = true;
+          this.reason = reason || 'cancelled';
+          (this._callbacks || []).splice(0).forEach(function (handler) {
+            try { handler(this.reason); } catch (_) {}
+          }, this);
+        },
+        onCancel: function (handler) {
+          if (this.cancelled) { handler(); return function () {}; }
+          var callbacks = this._callbacks || (this._callbacks = []);
+          callbacks.push(handler);
+          return function () {
+            var index = callbacks.indexOf(handler);
+            if (index !== -1) callbacks.splice(index, 1);
+          };
+        },
+      };
+  _activeProcessingToken = token;
+  try {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        if (token.cancelled) throw new Error('Processing cancelled');
+        if (attempt > 0) {
+          showProcessing(_tp('processing.retrying', 'Retrying processing…'), _tp('processing.retrying_msg', 'The browser worker is retrying the operation.'));
+          await new Promise(r => setTimeout(r, 700));
         }
-        return await window.BrowserToolRuntime.execute(toolId, files, opts);
+        const registryTool = (window.ToolRegistry && typeof window.ToolRegistry.get === 'function')
+          ? window.ToolRegistry.get(toolId) : null;
+        if (registryTool && registryTool.execution === 'browser') {
+          if (!window.BrowserToolRuntime || typeof window.BrowserToolRuntime.execute !== 'function') {
+            throw new Error('BrowserToolRuntime is unavailable — canonical browser execution cannot continue');
+          }
+          return await window.BrowserToolRuntime.execute(toolId, files, opts, null, token);
+        }
+        return await window.BrowserTools.process(toolId, files, opts);
+      } catch (err) {
+        lastErr = err;
+        if (token.cancelled) throw err;
+        const m = (err && err.message) || '';
+        // Don't retry terminal / user-correctable conditions
+        if (
+          m === 'file_too_large_for_browser' ||
+          m === 'memory_pressure' ||
+          m === 'No files provided' ||
+          m.startsWith('Please enter') ||
+          m.startsWith('Please upload') ||
+          m.startsWith('No text provided') ||
+          m.includes('Please select') ||
+          m.includes('Please upload two')
+        ) throw err;
       }
-      return await window.BrowserTools.process(toolId, files, opts);
-    } catch (err) {
-      lastErr = err;
-      const m = (err && err.message) || '';
-      // Don't retry terminal / user-correctable conditions
-      if (
-        m === 'file_too_large_for_browser' ||
-        m === 'memory_pressure' ||
-        m === 'No files provided' ||
-        m.startsWith('Please enter') ||
-        m.startsWith('Please upload') ||
-        m.startsWith('No text provided') ||
-        m.includes('Please select') ||
-        m.includes('Please upload two')
-      ) throw err;
     }
+    throw lastErr;
+  } finally {
+    if (_activeProcessingToken === token) _activeProcessingToken = null;
   }
-  throw lastErr;
 }
 
 // ── PROCESS FILE ───────────────────────────────────────────────────────────
@@ -2143,6 +2215,7 @@ async function processFile() {
   // fires before any async work begins.
   if (_processingInFlight) return;
   if (!currentTool) return;
+  const operationEpoch = _toolMemoryEpoch;
   if (selectedFiles.length === 0) {
     showStatus('error', _tp('status.no_file', 'No file selected'), _tp('status.no_file_msg', 'Please upload a file before processing.'));
     return;
@@ -2321,9 +2394,11 @@ async function processFile() {
           selectedFiles.map(e => e.file),
           opts,
         );
+        if (operationEpoch !== _toolMemoryEpoch) return;
 
         // ── Output Validation Layer ───────────────────────────────────────
         const validation = await OutputValidator.check(currentTool.id, result);
+        if (operationEpoch !== _toolMemoryEpoch) return;
         if (!validation.ok) {
           hideProcessing();
           showStatus('error', _tp('status.result_incomplete', 'Result incomplete'), validation.msg);
@@ -2363,6 +2438,7 @@ async function processFile() {
         return;
       } catch (err) {
         hideProcessing();
+        if (operationEpoch !== _toolMemoryEpoch) return;
         const rawMsg = (err && err.message) || '';
         let userMsg = 'Something went wrong. Please try again.';
         if (rawMsg === 'file_too_large_for_browser') {

@@ -114,10 +114,19 @@ self.onmessage = async function (ev) {
     var inputBuf = d.buffers[0];
 
     var opts = d.opts || {};
-    var xPct = Math.max(0, parseFloat(opts.x || '10')) / 100;
-    var yPct = Math.max(0, parseFloat(opts.y || '40')) / 100;
-    var wPct = Math.max(0.01, parseFloat(opts.width || '30')) / 100;
-    var hPct = Math.max(0.01, parseFloat(opts.height || '10')) / 100;
+    var xValue = Number(opts.x == null || opts.x === '' ? 10 : opts.x);
+    var yValue = Number(opts.y == null || opts.y === '' ? 40 : opts.y);
+    var widthValue = Number(opts.width == null || opts.width === '' ? 30 : opts.width);
+    var heightValue = Number(opts.height == null || opts.height === '' ? 10 : opts.height);
+    if (![xValue, yValue, widthValue, heightValue].every(Number.isFinite) ||
+        xValue < 0 || yValue < 0 || widthValue <= 0 || heightValue <= 0 ||
+        xValue + widthValue > 100 || yValue + heightValue > 100) {
+      throw new Error('Redaction area must be within the page bounds.');
+    }
+    var xPct = xValue / 100;
+    var yPct = yValue / 100;
+    var wPct = widthValue / 100;
+    var hPct = heightValue / 100;
     // Canvas y-origin is top-down; PDF/pdf-lib y-origin is bottom-up. The
     // rectangle math below stays in canvas (top-down) space throughout
     // rendering, so no conversion is needed here — this differs from the
@@ -135,6 +144,9 @@ self.onmessage = async function (ev) {
     var targetSet = (!opts.pages || /^all$/i.test(String(opts.pages).trim()))
       ? null // null = every page
       : new Set(parseRange(String(opts.pages), totalPages));
+    if (targetSet && targetSet.size === 0) {
+      throw new Error('No valid pages were selected for redaction.');
+    }
 
     var outDoc = await PDFDocument.create();
 

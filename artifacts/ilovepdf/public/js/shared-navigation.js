@@ -14,17 +14,19 @@
   if (currentMain) routeCache.set(currentKey, { main: currentMain, meta: captureMeta() });
 
   var toolCoreScripts = [
+    '/js/config.js',
     '/js/tools-config.js',
     '/js/tool-registry-runtime.js',
     '/js/tool-module-registry.js',
     '/js/tool-content.js',
     '/js/tool-state.js',
-    '/js/session-persist.js',
     '/js/i18n-ext.js',
-    '/js/queue-client.js',
     '/js/usage-limit.js',
     '/js/shared.js',
+    '/js/object-url-registry.js',
     '/js/chrome-shim.js',
+    '/js/auth-ui.js',
+    '/js/tool-i18n-bridge.js',
     '/js/tool-page.js',
   ];
   var scriptLoads = new Map();
@@ -126,6 +128,9 @@
         D.head.appendChild(canonical);
       }
       canonical.href = meta.canonical;
+    } else {
+      var staleCanonical = D.head.querySelector('link[rel="canonical"]');
+      if (staleCanonical) staleCanonical.remove();
     }
   }
 
@@ -222,8 +227,31 @@
         .map(function (script) { return scriptPath(script.src); })
         .filter(function (path) {
           return path && path.indexOf('/js/') === 0 && !sharedScriptPaths.has(path) &&
-            path.indexOf('/js/runtime-') !== 0 && path !== '/js/browser-tools.js';
+            path.indexOf('/js/runtime-') !== 0 &&
+            path !== '/js/browser-tools.js' &&
+            path !== '/js/queue-client.js' &&
+            path !== '/js/session-persist.js';
         });
+      var homeTemplate = doc.getElementById('ilove-home-runtime-template');
+      if (homeTemplate && homeTemplate.content) {
+        var homeScripts = Array.from(homeTemplate.content.querySelectorAll('script[src]'))
+          .map(function (script) { return scriptPath(script.src); })
+          .filter(function (path) {
+            return [
+              '/js/config.js',
+              '/js/i18n.js',
+              '/js/chrome.js',
+              '/js/dropdown-fix.js',
+              '/js/tools-config.js',
+              '/js/home.js',
+              '/js/home-fast-boot.js',
+              '/js/auth-ui.js',
+              '/js/app-router.js',
+            ].indexOf(path) !== -1;
+          });
+        scripts = scripts.concat(homeScripts);
+      }
+      scripts = Array.from(new Set(scripts));
       for (var i = 0; i < scripts.length; i++) {
         await loadScript(scripts[i]);
         if (id !== navigationId) return;

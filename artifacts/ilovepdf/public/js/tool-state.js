@@ -1,29 +1,7 @@
-/* tool-state.js — Persistent state for the 3-step tool flow.
- *
- * Strategy:
- *   • sessionStorage holds the LIGHT state (slug, step, file metadata,
- *     result HTML / download URL) so it survives a tab refresh.
- *   • IndexedDB holds the HEAVY blobs (actual File objects + the result
- *     blob if the download URL is a blob: URL) so refresh on /preview or
- *     /download keeps things truly working — not just visually present.
- *
- * Scope is per tool slug: switching from /merge-pdf to /compress-pdf
- * does NOT inherit the previous tool's files, but switching does NOT
- * wipe them either (the user can come back).
- *
- * Public API:
- *   ToolState.save(slug, payload)
- *   ToolState.load(slug) -> { meta, files, result } | null
- *   ToolState.clear(slug)
- *   ToolState.putBlob(slug, key, blob)
- *   ToolState.getBlob(slug, key) -> Promise<Blob|null>
- *
- * `payload` shape (what tool-page.js passes in):
- *   {
- *     step,                // 'upload' | 'preview' | 'download'
- *     files: [{ id, name, size, type, rotation }],
- *     result: { html, downloadUrl, filename, isBlob }
- *   }
+/* tool-state.js — compatibility surface for the memory-only tool flow.
+ * File bytes and outputs are never stored for refresh recovery. Legacy
+ * persistence APIs fail closed; clearAllFiles removes data left by older
+ * releases. Browser JavaScript cannot promise physical RAM zeroization.
  */
 (function () {
   const SS_PREFIX = 'ilovepdf:toolState:';
@@ -55,31 +33,11 @@
     return dbPromise;
   }
 
-  function blobKey(slug, key) { return `${slug}::${key}`; }
+  // File bytes are deliberately never persisted. These compatibility methods
+  // remain so older callers fail closed instead of restoring a prior file.
+  async function putBlob() { return false; }
 
-  async function putBlob(slug, key, blob) {
-    if (!blob) return;
-    try {
-      const db = await openDB();
-      await new Promise((res, rej) => {
-        const tx = db.transaction(DB_STORE, 'readwrite');
-        tx.objectStore(DB_STORE).put(blob, blobKey(slug, key));
-        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
-      });
-    } catch (e) { /* non-fatal — refresh will simply lose the blob */ }
-  }
-
-  async function getBlob(slug, key) {
-    try {
-      const db = await openDB();
-      return await new Promise((res, rej) => {
-        const tx = db.transaction(DB_STORE, 'readonly');
-        const r  = tx.objectStore(DB_STORE).get(blobKey(slug, key));
-        r.onsuccess = () => res(r.result || null);
-        r.onerror   = () => rej(r.error);
-      });
-    } catch (e) { return null; }
-  }
+  async function getBlob() { return null; }
 
   // Wipe every key for this slug. The transaction itself is awaited so
   // callers can rely on cleanup having completed before a lifecycle boundary.
@@ -120,30 +78,88 @@
     return true;
   }
 
-  function save(slug, payload) {
-    if (!slug) return;
+  // Purge blobs and metadata left by older releases, then leave persistence
+  // disabled for every tool rather than only clearing the current slug.
+  async function clearAllFiles() {
     try {
-      const body = { ts: Date.now(), slug, ...payload };
-      sessionStorage.setItem(SS_PREFIX + slug, JSON.stringify(body));
-      // Phase 3: also mirror to cross-session localStorage (2-hour TTL) so
-      // the state survives a full browser close and reopen.
-      try { if (window.SessionPersist) window.SessionPersist.save(slug, body); } catch (_) {}
-    } catch (_) { /* quota / disabled — non-fatal */ }
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const key = sessionStorage.key(i);
+        if (key && key.indexOf(SS_PREFIX) === 0) sessionStorage.removeItem(key);
+      }
+    } catch (_) {}
+    try {
+      const prefixes = ['ilpdf:sp:', 'ilpdf:dl', 'ilpdf:res'];
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && prefixes.some(prefix => key.indexOf(prefix) === 0)) localStorage.removeItem(key);
+      }
+    } catch (_) {}
+    let toolStoreCleared = false;
+    try {
+      const db = await openDB();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).clear();
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('Tool file cleanup aborted'));
+      });
+      toolStoreCleared = true;
+    } catch (_) {
+      // Continue best-effort cleanup of legacy temporary stores below.
+    }
+
+    function deleteDatabase(name) {
+      return new Promise(resolve => {
+        let settled = false;
+        const finish = value => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        };
+        const timer = setTimeout(() => finish(false), 2000);
+        try {
+          const request = indexedDB.deleteDatabase(name);
+          request.onsuccess = () => finish(true);
+          request.onerror = () => finish(false);
+          request.onblocked = () => finish(false);
+        } catch (_) {
+          finish(false);
+        }
+      });
+    }
+
+    async function clearPrivateTempFiles() {
+      try {
+        if (!navigator.storage || typeof navigator.storage.getDirectory !== 'function') return true;
+        const root = await navigator.storage.getDirectory();
+        const entries = root.entries();
+        while (true) {
+          const next = await entries.next();
+          if (next.done) break;
+          const name = next.value && next.value[0];
+          if (typeof name === 'string' &&
+              (name.indexOf('ilovepdf_') === 0 || name.indexOf('ae_stage_') === 0)) {
+            try { await root.removeEntry(name, { recursive: true }); } catch (_) {}
+          }
+        }
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    const legacyStores = await Promise.all([
+      deleteDatabase('ilovepdf-adv-temp'),
+      deleteDatabase('ilovepdf-lfs-cp'),
+      clearPrivateTempFiles(),
+    ]);
+    return toolStoreCleared && legacyStores.every(Boolean);
   }
 
-  function load(slug) {
-    if (!slug) return null;
-    try {
-      const raw = sessionStorage.getItem(SS_PREFIX + slug);
-      if (!raw) {
-        // Phase 3: sessionStorage was cleared (browser close) — fall back to
-        // the cross-session localStorage mirror so the user can resume.
-        try { if (window.SessionPersist) return window.SessionPersist.load(slug); } catch (_) {}
-        return null;
-      }
-      return JSON.parse(raw);
-    } catch (_) { return null; }
-  }
+  function save() { return false; }
+  function load() { return null; }
 
   function clear(slug) {
     if (!slug) return;
@@ -165,7 +181,7 @@
 
   window.ToolState = {
     save, load, clear,
-    putBlob, getBlob, clearBlobs, clearAfterDelivery,
+    putBlob, getBlob, clearBlobs, clearAfterDelivery, clearAllFiles,
     rewriteBlobHrefs,
   };
 })();

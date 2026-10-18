@@ -14,9 +14,12 @@
     _scriptPromises[path] = new Promise(function (resolve, reject) {
       var script = document.createElement('script');
       script.src = path;
-      script.async = true;
+      script.async = false;
       script.dataset.toolRuntime = '1';
-      script.onload = function () { resolve(); };
+      script.onload = function () {
+        script.dataset.loaded = 'true';
+        resolve();
+      };
       script.onerror = function () {
         delete _scriptPromises[path];
         script.remove();
@@ -103,6 +106,16 @@
       register(tool);
       if (!G.BrowserTools.supports(toolId)) {
         return { ok: false, code: 'LOCAL_ENGINE_UNAVAILABLE' };
+      }
+
+      // Keep the canonical scheduler and execution boundary out of the
+      // homepage bundle. They are prepared while the selected file is shown.
+      if (!G.TaskScheduler) await _loadScript('/js/task-scheduler.js');
+      if (!G.RuntimeScheduler) await _loadScript('/js/runtime-task-scheduler.js');
+      if (!G.BrowserToolRuntime) await _loadScript('/js/browser-tool-runtime.js');
+      if (!G.RuntimeScheduler || typeof G.RuntimeScheduler.run !== 'function' ||
+          !G.BrowserToolRuntime || typeof G.BrowserToolRuntime.execute !== 'function') {
+        return { ok: false, code: 'LOCAL_RUNTIME_UNAVAILABLE' };
       }
 
       // Preview code is loaded only after the user selects a file. Image files

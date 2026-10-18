@@ -676,3 +676,16 @@ if (document.readyState === 'loading') {
   bootHomePage();
   setTimeout(ensureHomepageToolCardIcons, 0);
 }
+
+// The shared router keeps the chrome in place and swaps only <main>. Refresh
+// generated homepage content when a cached homepage is revisited.
+window.addEventListener('app:route-changed', event => {
+  let route;
+  try { route = new URL(event.detail && event.detail.url || window.location.href); }
+  catch (_) { return; }
+  if (route.pathname !== '/') return;
+  renderSessionContinue();
+  waitForToolGroupsAndRender();
+  ensureHomepageToolCardIcons();
+  refreshHomeIcons();
+});

@@ -12,19 +12,28 @@
   var lastSubmitAt = 0;
 
   // Stamp the time each form was opened, to catch instant bot submissions.
-  document.addEventListener('DOMContentLoaded', function () {
+  function stampContactForms() {
     var forms = document.querySelectorAll('.contact-form');
     Array.prototype.forEach.call(forms, function (f) { f.dataset.openedAt = Date.now(); });
     // Also stamp when a <details> is expanded — gives a fresh "fill window".
     var toggles = document.querySelectorAll('.cc-toggle');
     Array.prototype.forEach.call(toggles, function (d) {
+      if (d.dataset.contactToggleBound) return;
+      d.dataset.contactToggleBound = '1';
       d.addEventListener('toggle', function () {
         if (!d.open) return;
         var f = d.querySelector('.contact-form');
         if (f) f.dataset.openedAt = Date.now();
       });
     });
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', stampContactForms, { once: true });
+  } else {
+    stampContactForms();
+  }
+  window.addEventListener('app:route-changed', stampContactForms);
 
   function setStatus(el, text, kind) {
     el.textContent = text;

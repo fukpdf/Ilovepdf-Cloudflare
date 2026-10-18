@@ -24,7 +24,7 @@
     'pdf-to-jpg': true, 'crop-image': true, 'resize-image': true, 'image-filters': true,
     'word-to-pdf': true, 'word-to-excel': true, 'html-to-pdf': true, 'edit': true,
     'sign': true, 'pdf-to-word': true, 'pdf-to-excel': true, 'repair': true,
-    'compare': true, 'ocr': true, 'background-remover': true, 'ai-summarize': true,
+    'compare': true, 'redact': true, 'ocr': true, 'background-remover': true, 'ai-summarize': true,
     'workflow': true, 'pdf-to-powerpoint': true, 'powerpoint-to-pdf': true,
     'excel-to-pdf': true, 'scan-to-pdf': true,
   };

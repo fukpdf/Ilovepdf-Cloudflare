@@ -98,6 +98,7 @@ OPS.crop = async function (buffers, opts) {
 };
 
 OPS.protect = async function (buffers, opts) {
+  throw new Error('local_pdf_encryption_unavailable');
   const password = String(opts.password || '').trim();
   if (!password) throw new Error('Please enter a password to protect the PDF');
   const doc  = await PDFDocument.load(buffers[0], { ignoreEncryption: true });
@@ -127,6 +128,7 @@ OPS.protect = async function (buffers, opts) {
 };
 
 OPS.unlock = async function (buffers) {
+  throw new Error('local_pdf_decryption_unavailable');
   const doc = await PDFDocument.load(buffers[0], { ignoreEncryption: true });
   return toAB(await doc.save({ useObjectStreams: true }));
 };
@@ -230,6 +232,7 @@ OPS.edit = async function (buffers, opts) {
 };
 
 OPS.redact = async function (buffers, opts) {
+  throw new Error('secure_redaction_worker_required');
   const doc    = await PDFDocument.load(buffers[0], { ignoreEncryption: true });
   const pages  = doc.getPages();
   const total  = pages.length;

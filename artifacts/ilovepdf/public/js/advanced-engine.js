@@ -6187,6 +6187,10 @@
 
   // ─── TRANSLATE (v5.4: paragraph-preserving + context continuity + meaningfulness) ─
   processors['translate'] = async function (files, opts, onStep) {
+    // Translation previously sent extracted document text to a third-party
+    // API. Keep the legacy entry point closed until an on-device model exists.
+    throw new Error('local_translation_engine_unavailable');
+
     var file  = files[0];
     var fHash = _fileHash(file);
     onStep(0, 'active', 5, 'Preparing your file\u2026');
@@ -6324,20 +6328,10 @@
             var hEl = document.getElementById('processing-msg');
             if (hEl) hEl.textContent = 'Optimizing connection\u2026';
           }
-          var url = 'https://api.mymemory.translated.net/get?q=' +
-            encodeURIComponent(queryText) + '&langpair=' +
-            encodeURIComponent(srcLang) + '|' + encodeURIComponent(targetLang);
-          return fetchWithRetry(url, signal ? { signal: signal } : {}, 1, 10000)
-            .then(function (resp) { return resp.json(); })
-            .then(function (json) {
-              var raw = (json.responseData && json.responseData.translatedText) || seg;
-              // Strip the context prefix from result if present
-              if (contextPrefix && raw.startsWith(contextPrefix.trim())) {
-                raw = raw.slice(contextPrefix.trim().length).trim();
-              }
-              return raw;
-            });
-        }, 3, 800, 12000).catch(function () { return seg; });
+          throw new Error('local_translation_engine_unavailable');
+        }, 3, 800, 12000).catch(function () {
+          throw new Error('local_translation_engine_unavailable');
+        });
 
         translatedParts.push(part);
       }

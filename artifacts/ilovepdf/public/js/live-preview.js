@@ -2990,6 +2990,11 @@
 
   window.LivePreview = {
     mount:     mount,
+    unmount:   function (host) {
+      if (!host) return;
+      cleanupHost(host);
+      host.replaceChildren();
+    },
     supported: function (toolId) { return SUPPORTED.has(toolId); },
   };
 }());

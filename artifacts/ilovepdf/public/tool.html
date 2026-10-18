@@ -1228,10 +1228,35 @@
         started = true;
         window.__ILOVE_TOOL_SCRIPTS_STARTED = true;
         applyDeferredLinks();
+        // Route HTML should boot only the shared shell and upload runtime.
+        // Processor, preview, worker, and model scripts are loaded by
+        // ToolModuleRegistry.prepare() after the visitor selects a file.
+        var coreScriptPaths = new Set([
+          '/js/config.js',
+          '/js/i18n.js',
+          '/js/chrome.js',
+          '/js/dropdown-fix.js',
+          '/js/app-router.js',
+          '/js/chrome-shim.js',
+          '/js/tools-config.js',
+          '/js/tool-registry-runtime.js',
+          '/js/tool-module-registry.js',
+          '/js/tool-content.js',
+          '/js/tool-state.js',
+          '/js/i18n-ext.js',
+          '/js/usage-limit.js',
+          '/js/object-url-registry.js',
+          '/js/shared.js',
+          '/js/auth-ui.js',
+          '/js/tool-i18n-bridge.js',
+          '/js/tool-page.js'
+        ]);
         var selected = Array.from(template.content.querySelectorAll('script[src]')).filter(function (source) {
-          var owners = ownerFor(source);
-          if (!owners || !knownRoute) return true;
-          return owners.some(function (owner) { return activeIds.has(owner); });
+          try {
+            return coreScriptPaths.has(new URL(source.getAttribute('src'), location.href).pathname);
+          } catch (_) {
+            return false;
+          }
         });
         if (!selected.length) {
           replayLifecycleEvents();

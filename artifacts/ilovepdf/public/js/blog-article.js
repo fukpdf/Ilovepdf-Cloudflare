@@ -376,7 +376,10 @@
   }
 
   window.addEventListener('scroll', onScroll, { passive: true });
-  document.addEventListener('DOMContentLoaded', () => {
+  function initializeBlogArticle() {
+    const main = document.querySelector('main');
+    if (!main || main.dataset.blogArticleInitialized === 'true') return;
+    main.dataset.blogArticleInitialized = 'true';
     onScroll();
     bindToc();
     bindFeedback();
@@ -388,5 +391,12 @@
       try { lucide.createIcons(); } catch (_) {}
     }
     bindStickyCta(slug);
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeBlogArticle, { once: true });
+  } else {
+    initializeBlogArticle();
+  }
+  window.addEventListener('app:route-changed', initializeBlogArticle);
 })();

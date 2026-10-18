@@ -4488,6 +4488,10 @@
     'background-remover': backgroundRemover,
     // ── Phase 5 ───────────────────────────────────────────────────────────
     'ai-summarize':       aiSummarize,
+    // This handler is intentionally a sentinel: redaction is dispatched to
+    // the dedicated flatten-and-burn worker below, never to the legacy
+    // pdf-lib rectangle implementation.
+    'redact':             async function () { throw new Error('redact_requires_dedicated_worker'); },
     // ── Phase 6 ───────────────────────────────────────────────────────────
     'workflow':           workflowPdf,
     'pdf-to-powerpoint':  pdfToPowerpoint,
@@ -4501,6 +4505,7 @@
   const WORKER_TOOLS = new Set([
     'compress', 'workflow', 'split', 'rotate', 'organize', 'crop',
     'page-numbers', 'watermark', 'sign', 'edit', 'compare',
+    'redact',
   ]);
 
   // Warm only the selected tool's libraries while the shared preparation
@@ -4533,6 +4538,7 @@
       'scan-to-pdf': ['pdf-lib', 'tesseract', 'jszip'],
       'ai-summarize': ['pdfjs'],
       workflow: ['pdf-lib', 'worker-pool'],
+      redact: ['worker-pool'],
       'background-remover': [],
       'crop-image': [],
       'resize-image': [],
@@ -4747,11 +4753,15 @@
         throw new Error('worker_processing_unavailable');
       }
       const fileName = files[0].name;
-      const workerUrl = '/workers/pdf-worker.js';
+      const workerUrl = toolId === 'redact'
+        ? '/workers/redact-worker.js'
+        : '/workers/pdf-worker.js';
       const bridge = getStreamBridge();
       let workerResult = null;
 
-      if (bridge) {
+      // The dedicated redaction worker uses a fixed one-message contract;
+      // bypass generic streaming protocols that it does not implement.
+      if (bridge && toolId !== 'redact') {
         if (files.length > 1) {
           // Multi-file operations (e.g. merge) stay sequential and bounded.
           const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0);
