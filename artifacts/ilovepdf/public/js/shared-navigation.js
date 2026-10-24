@@ -9,6 +9,8 @@
   var routeCache = new Map();
   var activeRequest = null;
   var navigationId = 0;
+  var routeScriptLoads = new Map();
+  var executedInlineRouteScripts = new Set();
   var currentKey = routeKey(new URL(G.location.href));
   var currentMain = D.querySelector('main');
   if (currentMain) routeCache.set(currentKey, { main: currentMain, meta: captureMeta() });
@@ -48,6 +50,44 @@
     return !!(meta && !meta.special);
   }
 
+  function isRuntimeToolMain(main) {
+    return !!(main && main.id === 'tool-content' &&
+      !main.hasAttribute('data-shared-special-route'));
+  }
+
+  function specialToolPageForUrl(url) {
+    var pathname = decodeURIComponent(url.pathname || '/');
+    var slug = pathname.replace(/^\/+|\/+$/g, '').toLowerCase().replace(/\.html$/i, '');
+    var legacyMeta = G.SLUG_MAP && G.SLUG_MAP[slug];
+    var registryTool = G.ToolRegistry && G.ToolRegistry.isReady()
+      ? (G.ToolRegistry.getBySlug(slug) ||
+        (legacyMeta && G.ToolRegistry.get(legacyMeta.id)))
+      : null;
+    var specialPath = registryTool
+      ? registryTool.specialRoute
+      : (legacyMeta && legacyMeta.special);
+
+    if (!specialPath && G.SLUG_MAP) {
+      var matchingSlug = Object.keys(G.SLUG_MAP).find(function (candidate) {
+        var meta = G.SLUG_MAP[candidate];
+        return meta && meta.special &&
+          new URL(meta.special, G.location.origin).pathname === pathname;
+      });
+      if (matchingSlug) {
+        var matchingMeta = G.SLUG_MAP[matchingSlug];
+        registryTool = G.ToolRegistry && G.ToolRegistry.isReady()
+          ? G.ToolRegistry.getBySlug(matchingSlug) || G.ToolRegistry.get(matchingMeta.id)
+          : null;
+        specialPath = registryTool
+          ? registryTool.specialRoute
+          : matchingMeta.special;
+        slug = matchingSlug;
+      }
+    }
+
+    return specialPath ? { slug: slug, path: specialPath } : null;
+  }
+
   function scriptPath(src) {
     try { return new URL(src, G.location.origin).pathname; } catch (_) { return ''; }
   }
@@ -82,6 +122,94 @@
     });
     scriptLoads.set(path, promise);
     return promise;
+  }
+
+  function isExecutableScript(script) {
+    var type = (script.getAttribute('type') || '').trim().toLowerCase();
+    return !type || type === 'text/javascript' ||
+      type === 'application/javascript' || type === 'module';
+  }
+
+  function loadSpecialPageScript(sourceScript, baseUrl) {
+    if (!isExecutableScript(sourceScript)) return Promise.resolve();
+    var sourceText = sourceScript.textContent || '';
+    var type = (sourceScript.getAttribute('type') || '').trim().toLowerCase();
+    var src = sourceScript.getAttribute('src');
+
+    if (!src) {
+      if (!sourceText.trim()) return Promise.resolve();
+      var inlineKey = baseUrl + '::' + sourceText;
+      if (executedInlineRouteScripts.has(inlineKey)) return Promise.resolve();
+      executedInlineRouteScripts.add(inlineKey);
+      var inlineScript = D.createElement('script');
+      if (type === 'module') {
+        inlineScript.type = 'module';
+        inlineScript.textContent = sourceText;
+        return new Promise(function (resolve, reject) {
+          inlineScript.onload = resolve;
+          inlineScript.onerror = function () {
+            reject(new Error('A tool page module could not be initialized.'));
+          };
+          D.head.appendChild(inlineScript);
+        });
+      }
+      inlineScript.textContent = '(function () {\n' + sourceText + '\n}).call(window);';
+      D.head.appendChild(inlineScript);
+      inlineScript.remove();
+      return Promise.resolve();
+    }
+
+    var scriptUrl;
+    try { scriptUrl = new URL(src, baseUrl); } catch (_) { return Promise.resolve(); }
+    var path = scriptUrl.pathname;
+    if (sharedScriptPaths.has(path) || path.indexOf('/js/runtime-') === 0 ||
+        path === '/js/browser-tools.js' || path === '/js/queue-client.js' ||
+        path === '/js/session-persist.js') {
+      return Promise.resolve();
+    }
+
+    var key = (type || 'classic') + ':' + scriptUrl.href;
+    if (routeScriptLoads.has(key)) return routeScriptLoads.get(key);
+    var alreadyLoaded = Array.from(D.scripts).some(function (script) {
+      if (!script.src || new URL(script.src, G.location.href).href !== scriptUrl.href) return false;
+      var loadedType = (script.getAttribute('type') || '').trim().toLowerCase();
+      return loadedType === type &&
+        (script.dataset.loaded === 'true' ||
+          (G.performance && G.performance.getEntriesByName(script.src).length > 0));
+    });
+    if (alreadyLoaded) return Promise.resolve();
+
+    var promise = new Promise(function (resolve, reject) {
+      var script = D.createElement('script');
+      if (type) script.type = type;
+      script.async = false;
+      ['integrity', 'crossorigin', 'referrerpolicy', 'nonce'].forEach(function (attribute) {
+        if (sourceScript.hasAttribute(attribute)) {
+          script.setAttribute(attribute, sourceScript.getAttribute(attribute));
+        }
+      });
+      script.src = scriptUrl.href;
+      script.onload = function () {
+        script.dataset.loaded = 'true';
+        resolve();
+      };
+      script.onerror = function () {
+        routeScriptLoads.delete(key);
+        script.remove();
+        reject(new Error('A tool page dependency could not be loaded.'));
+      };
+      D.head.appendChild(script);
+    });
+    routeScriptLoads.set(key, promise);
+    return promise;
+  }
+
+  async function loadSpecialPageScripts(doc, baseUrl, id) {
+    var scripts = Array.from(doc.querySelectorAll('script'));
+    for (var i = 0; i < scripts.length; i++) {
+      await loadSpecialPageScript(scripts[i], baseUrl);
+      if (id !== navigationId) return;
+    }
   }
 
   function captureMeta() {
@@ -167,7 +295,7 @@
 
   function saveCurrentPage() {
     var main = D.querySelector('main');
-    if (!main || main.id === 'tool-content') return;
+    if (!main || isRuntimeToolMain(main)) return;
     routeCache.set(currentKey, { main: main, meta: captureMeta() });
   }
 
@@ -211,7 +339,7 @@
     dispatchRoute(url, true);
   }
 
-  async function loadStaticRoute(url, doc, targetMain, targetMeta, id) {
+  async function loadStaticRoute(url, doc, targetMain, targetMeta, id, specialDocumentUrl) {
     if (!targetMain) throw new Error('Page content was not found.');
     clearToolFiles();
     saveCurrentPage();
@@ -222,7 +350,10 @@
     setMain(nextMain);
     applyMeta(cached ? cached.meta : targetMeta);
 
-    if (!cached) {
+    if (!cached && specialDocumentUrl) {
+      await loadSpecialPageScripts(doc, specialDocumentUrl, id);
+      if (id !== navigationId) return;
+    } else if (!cached) {
       var scripts = Array.from(doc.querySelectorAll('script[src]'))
         .map(function (script) { return scriptPath(script.src); })
         .filter(function (path) {
@@ -267,6 +398,26 @@
     dispatchRoute(url, false);
   }
 
+  async function loadSpecialToolPage(url, specialPage, id) {
+    var documentUrl = new URL(specialPage.path, G.location.origin);
+    var response = await fetch(documentUrl.href, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'ILovePDF-Shared-Navigation' },
+      signal: activeRequest.signal,
+    });
+    if (!response.ok || !/text\/html/i.test(response.headers.get('content-type') || '')) {
+      throw new Error('This tool page could not be loaded.');
+    }
+    var html = await response.text();
+    if (id !== navigationId) return;
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var targetMain = doc.querySelector('main');
+    if (!targetMain) throw new Error('Tool page content was not found.');
+    targetMain.setAttribute('data-shared-special-route', specialPage.slug);
+    await loadStaticRoute(url, doc, targetMain, metaFromDocument(doc), id, documentUrl.href);
+  }
+
   async function navigate(input, options) {
     options = options || {};
     var url = input instanceof URL ? input : new URL(input, G.location.href);
@@ -276,6 +427,9 @@
     activeRequest = new AbortController();
 
     var currentToolMain = D.querySelector('#tool-content');
+    if (currentToolMain && currentToolMain.hasAttribute('data-shared-special-route')) {
+      currentToolMain = null;
+    }
     if (currentToolMain && isToolRoute(url) && typeof G.loadToolPage === 'function') {
       clearToolFiles();
       if (options.push !== false) G.history.pushState({ spa: true }, '', url.href);
@@ -287,7 +441,7 @@
 
     var key = routeKey(url);
     var cached = routeCache.get(key);
-    if (cached && !(cached.main && cached.main.id === 'tool-content')) {
+    if (cached && !isRuntimeToolMain(cached.main)) {
       if (currentToolMain) clearToolFiles();
       saveCurrentPage();
       setMain(cached.main);
@@ -295,6 +449,12 @@
       if (options.push !== false) G.history.pushState({ spa: true }, '', url.href);
       currentKey = key;
       dispatchRoute(url, false);
+      return true;
+    }
+
+    var specialPage = specialToolPageForUrl(url);
+    if (specialPage) {
+      await loadSpecialToolPage(url, specialPage, id);
       return true;
     }
 
