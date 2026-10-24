@@ -74,7 +74,7 @@
     try {
       if (window.SessionPersist) window.SessionPersist.clear(slug);
     } catch (_) {}
-    await clearBlobs(slug);
+    await clearAllFiles();
     return true;
   }
 

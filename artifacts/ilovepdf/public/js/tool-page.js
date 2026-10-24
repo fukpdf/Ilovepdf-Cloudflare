@@ -1904,6 +1904,13 @@ function releaseToolMemory(reason, outputUrl) {
   }
 }
 
+// Navigating away or closing the tab is also a cleanup boundary. Browsers do
+// not expose a reliable "download fully saved" callback, so the download URL
+// is retained briefly after the click and purged on the next lifecycle event.
+window.addEventListener('pagehide', function () {
+  releaseToolMemory('pagehide');
+}, { once: true });
+
 window.releaseToolMemory = releaseToolMemory;
 
 function cryptoId() {

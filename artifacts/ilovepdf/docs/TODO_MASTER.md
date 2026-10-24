@@ -1,12 +1,20 @@
 # TODO_MASTER.md — Single Source of Truth for Outstanding Work
 
-**Last updated**: 2026-06-19  
-**Derived from**: Full read-only audit of all 24 existing docs + codebase  
-**Code changes**: ZERO — documentation only
+**Last updated**: 2026-10-18  
+**Derived from**: Project docs and current codebase state  
+**Code changes**: Shared local-only tool flow and lifecycle cleanup are implemented; unrelated backlog items remain.
 
 ---
 
 ## DONE
+
+### Shared local-only tool flow
+- [x] Shared navigation swaps the page content while preserving the header/footer.
+- [x] Tool processors, selected dependencies, and previews load after file selection.
+- [x] Processing status is inline; success opens the shared download step.
+- [x] Queue uploads and translation API requests are disabled; unsupported tools fail closed.
+- [x] Source/result references and legacy app-owned temp stores are cleared at lifecycle boundaries.
+- [x] `pnpm --filter @workspace/ilovepdf run audit:local-only-flow` static contract check added.
 
 ### Auth
 - [x] Email/password signup + login with bcrypt + JWT httpOnly cookie
@@ -231,6 +239,22 @@
   - Priority: Low
 
 ### Tools
+- [ ] **Local PDF protection and unlocking** — existing workers do not provide real password encryption/decryption; both tools fail closed until proper local engines are implemented.
+  - Status: Deliberately disabled rather than misrepresenting the output
+  - Priority: High
+
+- [ ] **On-device PDF translation** — third-party MyMemory requests were removed; a browser-local translation model is not yet available.
+  - Status: Deliberately disabled to keep extracted document text local
+  - Priority: High
+
+- [ ] **Per-tool processor code splitting** — the shared `browser-tools.js` handler bundle is still loaded as a single module after file selection; library dependencies are already selected per tool.
+  - Status: Deferred; not required for first-paint deferral
+  - Priority: Medium
+
+- [ ] **Browser end-to-end privacy/lifecycle coverage** — static checks exist, but real browser tests should assert no user-file network requests and verify cleanup after download, route changes, cancellation, and pagehide.
+  - Status: Not yet automated in a browser
+  - Priority: High
+
 - [ ] **Workflow builder** (`/workflow-builder`) — slug registered, `working: false`
   - Status: Route exists but disabled
   - Dependencies: Design work
@@ -239,11 +263,6 @@
 - [ ] **Scan-to-PDF** improvements — better OCR integration for scanned documents
   - Status: Basic version exists
   - Dependencies: HuggingFace integration
-  - Priority: Medium
-
-- [ ] **PDF translate quality** — currently MyMemory API (2500 char limit)
-  - Status: Works but limited
-  - Dependencies: Better translation API (DeepL, Google Translate)
   - Priority: Medium
 
 ### Arc Roadmap

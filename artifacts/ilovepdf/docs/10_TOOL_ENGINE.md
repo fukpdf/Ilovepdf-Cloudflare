@@ -58,15 +58,15 @@ All tools are defined in `public/js/tools-config.js` as the `TOOLS` array and `S
 | `watermark-pdf` | `watermark` | ✓ | pdf |
 | `sign-pdf` | `sign` | ✓ | pdf |
 | `add-page-numbers` | `page-numbers` | ✓ | pdf |
-| `redact-pdf` | `redact` | ✓ | pdf |
-| `protect-pdf` | `protect` | ✓ | pdf |
-| `unlock-pdf` | `unlock` | ✓ | pdf |
+| `redact-pdf` | `redact` | ✓ (dedicated local worker) | pdf |
+| `protect-pdf` | `protect` | Blocked: no real local encryption engine | pdf |
+| `unlock-pdf` | `unlock` | Blocked: no real local decryption engine | pdf |
 | `repair-pdf` | `repair` | ✓ | pdf |
 | `scan-pdf` | `scan-to-pdf` | ✓ | pdf |
 | `ocr-pdf` | `ocr` | ✓ | pdf |
 | `compare-pdf` | `compare` | ✓ | pdf |
 | `ai-summarizer` | `ai-summarize` | ✓ | pdf |
-| `translate-pdf` | `translate` | ✓ | pdf |
+| `translate-pdf` | `translate` | Blocked: on-device model not available | pdf |
 | `workflow-builder` | `workflow` | ✗ | pdf |
 | `numbers-to-words` | `numbers-to-words` | — (standalone) | pdf |
 | `currency-converter` | `currency-converter` | — (standalone) | pdf |
@@ -84,55 +84,99 @@ All tools are defined in `public/js/tools-config.js` as the `TOOLS` array and `S
 
 ## Processing Flow
 
-### Client-side Path (primary)
+### Shared shell and on-demand preparation
+
+```
+User opens a tool card
+  ↓
+SharedNavigation fetches/caches route HTML and replaces only <main>
+  ↓
+Existing header and footer stay mounted; tool upload UI uses the shared template
+  ↓
+User selects a file
+  ↓
+The shared preparation bar runs while ToolModuleRegistry.prepare(toolId, files)
+loads BrowserTools, the scheduler/runtime, preview UI, and that tool's declared
+library dependencies
+  ↓
+The upload/preview UI is ready; unsupported local engines fail closed
+```
+
+### Local processing and download
 
 ```
 User clicks "Process"
   ↓
-processFiles() in tool-page.js
+processFile() in tool-page.js
   ↓
 [1] PageOrganizer integration (if active)
     pageOrganizer.getEditedPdf() → edited PDF replaces selectedFiles[0].file
-    For rotate tool: #opt-degrees reset to '0' (safety net)
   ↓
-[2] showProcessing() overlay
+[2] showProcessing() shows an inline, accessible status bar and rotating messages
   ↓
 [3] Build opts from DOM (#opt-*)
   ↓
-[4] tryWithRetry(toolId, files, opts)
-     → window.BrowserTools.process(toolId, files, opts)
-        [intercepted by RuntimeAdapters / per-tool runtime e.g. RotateRuntime]
-     → AdvancedEngine wraps with:
-        - memory guard (checks available heap)
-        - adaptive streaming bridge (10 MB+ jobs when available)
-        - battery throttle
-        - retry (up to 2 retries)
-        - quality scoring
-        - DebugTrace
+[4] BrowserToolRuntime.execute() → BrowserTools.process()
+     → selected tool handler or dedicated local worker
   ↓
 [5] OutputValidator.check(toolId, result)
     → validates blob size, PDF magic bytes, etc.
   ↓
-[6] showStatus('success', ..., createStatusUrl(blob), filename)
-    → creates blob: URL for download
+[6] Success changes the main content to /<tool>/download without reloading
+    the shared header/footer
+  ↓
+[7] Download click starts the browser download; after a short handoff the app
+    drops File/Blob references, revokes object URLs, stops workers, and clears
+    legacy app temp storage
 ```
 
 ### Execution Boundary
 
-Browser processing is the authoritative execution path for supported tools. There is **no server fallback path**: if a browser-only worker or processor is unavailable, the operation fails closed with a user-visible error rather than silently uploading the file to a server.
+Browser processing is the only file-processing path. The queue client is a
+fail-closed compatibility stub; the shared tool route does not load it, and
+the app router has no file-upload fallback. If a local processor is unavailable,
+the operation fails with a visible error instead of uploading the document.
 
-For worker-safe tools, `BrowserTools.process()` requires Web Worker support and never falls back to main-thread processing. Large jobs (10 MB and above when the streaming bridge is available) use the runtime streaming bridge; smaller jobs use the bounded worker-pool transfer path.
+The tool page loads the shared processor bundle only after file selection, then
+prewarms only the selected tool's dependencies. The bundle is still a monolith:
+its handler definitions are shared even though large libraries and preview code
+are selected lazily. Worker-only tools require Web Worker support and do not
+silently fall back to the main thread. The dedicated redaction worker uses a
+fixed one-message contract and does not use the generic stream bridge.
+
+Three file tools intentionally fail closed because their available
+implementations are not genuine local processors: Protect does not encrypt PDFs,
+Unlock does not decrypt them, and Translate previously sent extracted text to
+MyMemory. Translation remains disabled until an on-device model is added. The
+two calculators remain standalone, non-file tools; Workflow Builder is disabled
+in configuration.
+
+### File lifetime and privacy limits
+
+- New source files and results are not stored in sessionStorage, localStorage,
+  IndexedDB, or OPFS for refresh recovery.
+- Startup cleanup removes file blobs and temporary stores left by older versions.
+- Leaving a tool, switching tools, starting a new file, downloading, and pagehide
+  release selected-file references, preview URLs, result URLs, and worker pools.
+- The browser does not provide a reliable event indicating that a download has
+  finished saving. Cleanup follows the download click after a short handoff and
+  also runs on pagehide.
+- JavaScript cannot guarantee physical RAM zeroization or control the browser's
+  garbage collector, swap, or download manager. The app drops its references and
+  best-effort clears app-owned temporary storage; it must not claim stronger
+  erasure than browsers can provide.
 
 ---
 
 ## Browser Tools Library (`browser-tools.js`)
 
-All tool implementations in one IIFE. Exposes `window.BrowserTools`:
+The shared handler bundle is loaded after a file is selected. It exposes:
 
 ```javascript
 window.BrowserTools = {
   process(toolId, files, opts) → Promise<{ blob, filename }>,
   supports(toolId)             → boolean,
+  prewarm(toolId)               → Promise<{ warmed, dependencies }>,
   _loadPdfLib()                → Promise<PDFLib>  // shared loader
 };
 ```
@@ -151,6 +195,8 @@ window.BrowserTools = {
 | pptxgenjs | cdn.jsdelivr.net | No | `window.PptxGenJS` |
 
 **IDB caching**: First load fetches from CDN, stores bytes in IndexedDB. Subsequent loads serve from IDB as blob: URL (zero network).
+This cache contains third-party library code only; user documents are never
+written to that cache.
 
 ---
 
