@@ -136,6 +136,8 @@ Browser processing is the only file-processing path. The queue client is a
 fail-closed compatibility stub; the shared tool route does not load it, and
 the app router has no file-upload fallback. If a local processor is unavailable,
 the operation fails with a visible error instead of uploading the document.
+Other site services may still handle non-file features such as accounts; this
+local-only boundary applies to document processing.
 
 The tool page loads the shared processor bundle only after file selection, then
 prewarms only the selected tool's dependencies. The bundle is still a monolith:
@@ -144,12 +146,15 @@ are selected lazily. Worker-only tools require Web Worker support and do not
 silently fall back to the main thread. The dedicated redaction worker uses a
 fixed one-message contract and does not use the generic stream bridge.
 
-Three file tools intentionally fail closed because their available
+Three standard file tools intentionally fail closed because their available
 implementations are not genuine local processors: Protect does not encrypt PDFs,
 Unlock does not decrypt them, and Translate previously sent extracted text to
 MyMemory. Translation remains disabled until an on-device model is added. The
-two calculators remain standalone, non-file tools; Workflow Builder is disabled
-in configuration.
+two calculators and image/utility generators remain standalone routes; the
+image compressor, image converter, and ZIP builder also retain bespoke local
+file flows. These `SLUG_MAP.special` pages are not yet unified with the shared
+upload/preview/download shell and may do a full navigation. Workflow Builder is
+disabled in configuration.
 
 ### File lifetime and privacy limits
 
@@ -206,8 +211,9 @@ written to that cache.
 
 | Worker | Purpose |
 |--------|---------|
-| `pdf-worker.js` | Core PDF operations (rotate, watermark, protect, unlock, crop, page-numbers, repair, compare) |
-| `pdf-lib-worker.js` | pdf-lib operations (merge, split, rotate — secondary) |
+| `pdf-worker.js` | Core local PDF operations; legacy protection, unlock, and redaction calls fail closed |
+| `pdf-lib-worker.js` | pdf-lib operations; legacy protection, unlock, and redaction calls fail closed |
+| `redact-worker.js` | Dedicated raster-flattening redaction; targeted content is not retained beneath the redaction |
 | `compress-worker.js` | PDF compression (Ghostscript via OPFS) |
 | `advanced-worker.js` | Advanced operations dispatcher |
 | `compare-worker.js` | PDF comparison engine |
@@ -220,7 +226,7 @@ written to that cache.
 | `pdf-excel-xlsx-worker.js` | PDF → XLSX conversion |
 | `pdf-ppt-pptx-worker.js` | PDF → PPTX conversion |
 | `summary-worker.js` | AI summarization (extractive) |
-| `translation-worker.js` | PDF text translation |
+| `translation-worker.js` | Legacy translation worker; not loaded by the shared local-only route |
 | `workerPool.js` | Worker pool manager (legacy) |
 | `shared-cluster-worker.js` | SharedWorker for cross-tab coordination |
 | `p4-heartbeat-mixin.js` | Heartbeat for worker health monitoring |
@@ -229,7 +235,13 @@ written to that cache.
 
 ## Per-Tool Runtime Adapters
 
-For complex tools, dedicated runtime adapters intercept `BrowserTools.process()`:
+Legacy tool-specific runtime adapters remain in the repository. The current
+shared route uses `BrowserToolRuntime` as its execution boundary and does not
+load those adapters eagerly. Do not assume a legacy adapter is active or
+verified without tracing its current call path.
+
+The example below documents a legacy adapter contract, not the active shared
+route.
 
 | Runtime | Global | Tool |
 |---------|--------|------|
@@ -263,11 +275,11 @@ RotateRuntime.process(file, opts)
 
 ## Page Organizer (`page-organizer.js`)
 
-**Page-Level Tools** (PageOrganizer opens for all these):
+**Page-Level Tools** (only supported tools mount PageOrganizer):
 ```
 'split', 'rotate', 'organize', 'crop', 'page-numbers',
 'watermark', 'sign', 'redact', 'ocr',
-'ai-summarize', 'translate', 'repair', 'edit'
+'ai-summarize', 'repair', 'edit'
 ```
 
 ### Internal State
@@ -302,9 +314,11 @@ if (unchanged) return { blob: originalBytes, file: originalFile };
 
 ## Preview Flow
 
-### Standard Preview (Upload Step)
+### Shared Preview (Upload Step)
 
-The "preview" in the tool flow is the **PageOrganizer grid** — a visual representation of all pages with their current state (rotation, order). This IS the single source of truth for what will be downloaded.
+The upload list, preview host, and step navigation are shared across file tools.
+PageOrganizer is mounted only for tools that support page-level editing; other
+tools use the common preview host or native browser image decoding.
 
 ### Live Preview Engine (`live-preview.js`, v6.0)
 
@@ -317,7 +331,6 @@ Additional real-content preview for select tools (mounted in a separate panel):
 | pdf-to-word | Structure analysis, confidence scores, mini-map |
 | pdf-to-excel | Column overlays, numeric coercion indicators |
 | background-remover | Before/after swipe compare, alpha-mask |
-| translate | Side-by-side original/translation, coverage % |
 | ai-summarize | Section preview, key topics, compression ratio |
 | edit | PDF canvas with ruler overlay, grid toggle |
 
@@ -325,7 +338,7 @@ Additional real-content preview for select tools (mounted in a separate panel):
 
 ## Download Flow
 
-After `processFiles()` succeeds:
+After `processFile()` succeeds:
 
 ```javascript
 showStatus(
@@ -337,8 +350,8 @@ showStatus(
 )
 ```
 
-`createStatusUrl(blob)` registers the URL with `window.ObjectURLRegistry` for:
-- Automatic revocation on next tool session (prevents memory leaks)
-- Re-download after page refresh (blob re-fetched from IDB if still valid)
+`createStatusUrl(blob)` registers a `blob:` URL with `window.ObjectURLRegistry`.
+The result is held in memory for the download step only; it is not restored from
+IndexedDB after a refresh. The URL is revoked at cleanup boundaries.
 
 The download link is a standard `<a href="blob:..." download="filename.pdf">` element.

@@ -1,6 +1,6 @@
 # TODO_MASTER.md — Single Source of Truth for Outstanding Work
 
-**Last updated**: 2026-10-18  
+**Last updated**: 2026-10-24
 **Derived from**: Project docs and current codebase state  
 **Code changes**: Shared local-only tool flow and lifecycle cleanup are implemented; unrelated backlog items remain.
 
@@ -9,11 +9,12 @@
 ## DONE
 
 ### Shared local-only tool flow
-- [x] Shared navigation swaps the page content while preserving the header/footer.
-- [x] Tool processors, selected dependencies, and previews load after file selection.
+- [x] Standard tool navigation swaps main content while preserving the header/footer.
+- [x] Standard tool processors, selected dependencies, and previews load after file selection.
 - [x] Processing status is inline; success opens the shared download step.
-- [x] Queue uploads and translation API requests are disabled; unsupported tools fail closed.
+- [x] Tool processing endpoint metadata and queue uploads are disabled; translation requests fail closed.
 - [x] Source/result references and legacy app-owned temp stores are cleared at lifecycle boundaries.
+- [x] Homepage, tool, and SEO descriptions no longer claim unavailable local engines are ready.
 - [x] `pnpm --filter @workspace/ilovepdf run audit:local-only-flow` static contract check added.
 
 ### Auth
@@ -250,6 +251,11 @@
 - [ ] **Per-tool processor code splitting** — the shared `browser-tools.js` handler bundle is still loaded as a single module after file selection; library dependencies are already selected per tool.
   - Status: Deferred; not required for first-paint deferral
   - Priority: Medium
+
+- [ ] **Unify standalone tool pages with the shared shell and file flow** — `SLUG_MAP.special` still redirects several tools to separate HTML pages, which reload their own shell and keep bespoke upload/result UI.
+  - Status: Local image compressor, image converter, and ZIP builder remain custom file workflows; calculator and generator pages are also separate.
+  - Relevant files: `public/js/tools-config.js`, `public/js/tool-page.js`, `public/js/shared-navigation.js`, `public/image-compressor.html`, `public/image-converter.html`, `public/zip-builder.html`, `public/numbers-to-words.html`, `public/currency-converter.html`, `public/qr-code-generator.html`, `public/barcode-generator.html`
+  - Priority: High
 
 - [ ] **Browser end-to-end privacy/lifecycle coverage** — static checks exist, but real browser tests should assert no user-file network requests and verify cleanup after download, route changes, cancellation, and pagehide.
   - Status: Not yet automated in a browser

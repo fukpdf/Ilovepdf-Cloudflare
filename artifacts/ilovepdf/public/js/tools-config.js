@@ -95,14 +95,14 @@ const TOOLS = [
     id: 'merge', name: 'Merge', icon: 'layers',
     description: 'Combine multiple PDF files into a single document',
     category: 'Organize PDFs', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/merge', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: true, working: true, clientSide: true, options: []
   },
   {
     id: 'split', name: 'Split', icon: 'scissors',
     description: 'Extract specific pages or ranges from a PDF',
     category: 'Organize PDFs', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/split', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'range', label: 'Page Range', type: 'text', placeholder: 'e.g. 1-3, 5, 7-9 (blank = all)' }
@@ -112,7 +112,7 @@ const TOOLS = [
     id: 'rotate', name: 'Rotate PDF', icon: 'rotate-cw',
     description: 'Rotate PDF pages to the correct orientation, including 90°, 180°, and 270° rotations',
     category: 'Organize PDFs', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/rotate', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'degrees', label: 'Rotation Angle', type: 'select', options: [
@@ -128,7 +128,7 @@ const TOOLS = [
     id: 'crop', name: 'Crop', icon: 'crop',
     description: 'Trim the margins of PDF pages',
     category: 'Organize PDFs', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/crop', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'cropLeft',   label: 'Crop Left (%)',   type: 'number', placeholder: '0' },
@@ -141,7 +141,7 @@ const TOOLS = [
     id: 'organize', name: 'Organize PDF', icon: 'list-ordered',
     description: 'Reorder the pages of your PDF document',
     category: 'Organize PDFs', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/organize', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'pageOrder', label: 'Page Order (optional — leave blank to use drag order)', type: 'text', placeholder: 'e.g. 3,1,2 — or drag pages above' }
@@ -153,7 +153,7 @@ const TOOLS = [
     id: 'compress', name: 'Compress PDF', icon: 'archive',
     description: 'Reduce PDF file size while preserving quality',
     category: 'Compress & Optimize', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/compress', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true, options: []
   },
 
@@ -162,7 +162,7 @@ const TOOLS = [
     id: 'pdf-to-word', name: 'PDF to Word', icon: 'file-text',
     description: 'Convert PDF to editable Word documents',
     category: 'Convert From PDF', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/pdf-to-word', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'structureMode', label: 'Structure', type: 'select', options: [
@@ -179,7 +179,7 @@ const TOOLS = [
     id: 'pdf-to-powerpoint', name: 'PDF to PowerPoint', icon: 'layout',
     description: 'Transform PDFs into editable presentations',
     category: 'Convert From PDF', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/pdf-to-powerpoint', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'layout', label: 'Slide Layout', type: 'select', options: [
@@ -223,14 +223,14 @@ const TOOLS = [
     id: 'pdf-to-excel', name: 'PDF to Excel', icon: 'table',
     description: 'Extract tables from PDFs into spreadsheets',
     category: 'Convert From PDF', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/pdf-to-excel', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true, options: []
   },
   {
     id: 'pdf-to-jpg', name: 'PDF to JPG', icon: 'image', clientSide: true,
     description: 'Convert PDF pages into high-quality JPG images',
     category: 'Convert From PDF', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/pdf-to-jpg', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true,
     options: [
       { id: 'quality', label: 'Image Quality', type: 'select', options: [
@@ -245,14 +245,14 @@ const TOOLS = [
     id: 'word-to-pdf', name: 'Word to PDF', icon: 'file-up',
     description: 'Convert Word documents to PDF format',
     category: 'Convert To PDF', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/word-to-pdf', acceptedFiles: '.doc,.docx',
+    acceptedFiles: '.doc,.docx',
     multipleFiles: false, working: true, clientSide: true, options: []
   },
   {
     id: 'powerpoint-to-pdf', name: 'PowerPoint to PDF', icon: 'monitor',
     description: 'Convert presentations to PDF format',
     category: 'Convert To PDF', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/powerpoint-to-pdf', acceptedFiles: '.ppt,.pptx',
+    acceptedFiles: '.ppt,.pptx',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'pageSize', label: 'Page Size', type: 'select', options: [
@@ -297,7 +297,7 @@ const TOOLS = [
     id: 'excel-to-pdf', name: 'Excel to PDF', icon: 'grid',
     description: 'Convert Excel spreadsheets to PDF',
     category: 'Convert To PDF', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/excel-to-pdf', acceptedFiles: '.xls,.xlsx',
+    acceptedFiles: '.xls,.xlsx',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'pageSize',    label: 'Page Size',   type: 'select', options: [{ value:'A4', label:'A4' }, { value:'Letter', label:'Letter' }, { value:'A3', label:'A3' }] },
@@ -310,21 +310,21 @@ const TOOLS = [
     id: 'word-to-excel', name: 'Word to Excel', icon: 'sheet',
     description: 'Extract tables and structured data from Word documents into Excel',
     category: 'Convert To PDF', group: 'pdf', badge: 'NEW',
-    apiEndpoint: '/api/word-to-excel', acceptedFiles: '.docx',
+    acceptedFiles: '.docx',
     multipleFiles: false, working: true, clientSide: true, options: []
   },
   {
     id: 'jpg-to-pdf', name: 'JPG to PDF', icon: 'file-image', clientSide: true,
     description: 'Convert images (JPG, PNG) into a PDF document',
     category: 'Convert To PDF', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/jpg-to-pdf', acceptedFiles: '.jpg,.jpeg,.png',
+    acceptedFiles: '.jpg,.jpeg,.png',
     multipleFiles: true, working: true, options: []
   },
   {
     id: 'html-to-pdf', name: 'HTML to PDF', icon: 'globe',
     description: 'Convert HTML files into PDF documents',
     category: 'Convert To PDF', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/html-to-pdf', acceptedFiles: '.html,.htm',
+    acceptedFiles: '.html,.htm',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'pageSize', label: 'Page Size', type: 'select', options: [
@@ -374,7 +374,7 @@ const TOOLS = [
     id: 'edit', name: 'Edit PDF', icon: 'edit-3',
     description: 'Add text annotations and overlays to your PDF',
     category: 'Edit & Annotate', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/edit', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'text',     label: 'Text to Add',              type: 'text',   placeholder: 'Your text here...' },
@@ -388,7 +388,7 @@ const TOOLS = [
     id: 'watermark', name: 'Watermark', icon: 'droplets', clientSide: true,
     description: 'Add a text watermark to protect your document',
     category: 'Edit & Annotate', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/watermark', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true,
     options: [
       { id: 'text',     label: 'Watermark Text',     type: 'text',   placeholder: 'CONFIDENTIAL' },
@@ -406,7 +406,7 @@ const TOOLS = [
     id: 'sign', name: 'Sign PDF', icon: 'pen-tool',
     description: 'Add a digital text signature to your PDF',
     category: 'Edit & Annotate', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/sign', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'signatureText', label: 'Your Name / Signature', type: 'text',   placeholder: 'John Doe' },
@@ -417,7 +417,7 @@ const TOOLS = [
     id: 'page-numbers', name: 'Add Page Numbers', icon: 'list-numbers', clientSide: true,
     description: 'Insert page numbers into your document',
     category: 'Edit & Annotate', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/page-numbers', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true,
     options: [
       { id: 'position', label: 'Position', type: 'select', options: [
@@ -435,7 +435,7 @@ const TOOLS = [
     id: 'redact', name: 'Redact PDF', icon: 'eye-off',
     description: 'Black out sensitive areas of your PDF',
     category: 'Edit & Annotate', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/redact', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'x',      label: 'X Position (%)',  type: 'number', placeholder: '10' },
@@ -449,9 +449,9 @@ const TOOLS = [
   // ── SECURITY ──────────────────────────────────────────────────────────────
   {
     id: 'protect', name: 'Protect PDF', icon: 'lock',
-    description: 'Add password protection to your PDF',
+    description: 'Temporarily unavailable until a verified browser-only password protection engine is ready.',
     category: 'Security', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/protect', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'password', label: 'Password', type: 'text', placeholder: 'Enter a password' }
@@ -459,9 +459,9 @@ const TOOLS = [
   },
   {
     id: 'unlock', name: 'Unlock PDF', icon: 'unlock', clientSide: true,
-    description: 'Remove password protection from a PDF',
+    description: 'Temporarily unavailable until a verified browser-only password removal engine is ready.',
     category: 'Security', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/unlock', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true,
     options: [
       { id: 'password', label: 'Current Password (if known)', type: 'text', placeholder: 'Leave blank if unsure' }
@@ -473,7 +473,7 @@ const TOOLS = [
     id: 'repair', name: 'Repair', icon: 'wrench',
     description: 'Fix corrupted or damaged PDF files',
     category: 'Advanced Tools', group: 'pdf', badge: 'Utility',
-    apiEndpoint: '/api/repair', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'repairDepth', label: 'Repair Depth', type: 'select', options: [
@@ -494,7 +494,7 @@ const TOOLS = [
     id: 'scan-to-pdf', name: 'Scan', icon: 'scan-line',
     description: 'Convert scanned images into a PDF document',
     category: 'Advanced Tools', group: 'pdf', badge: 'PDF',
-    apiEndpoint: '/api/scan-to-pdf', acceptedFiles: '.jpg,.jpeg,.png',
+    acceptedFiles: '.jpg,.jpeg,.png',
     multipleFiles: true, working: true, clientSide: true,
     options: [
       { id: 'outputFormat', label: 'Output', type: 'select', options: [
@@ -533,7 +533,7 @@ const TOOLS = [
     id: 'ocr', name: 'OCR', icon: 'type',
     description: 'Extract and copy text from your PDF document',
     category: 'Advanced Tools', group: 'pdf', badge: 'AI',
-    apiEndpoint: '/api/ocr', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'ocrMode', label: 'OCR Mode', type: 'select', options: [
@@ -572,14 +572,14 @@ const TOOLS = [
     id: 'compare', name: 'Compare', icon: 'columns',
     description: 'Find differences between two PDF files',
     category: 'Advanced Tools', group: 'pdf', badge: 'Utility',
-    apiEndpoint: '/api/compare', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: true, working: true, clientSide: true, options: []
   },
   {
     id: 'ai-summarize', name: 'AI Summarizer', icon: 'sparkles',
     description: 'Summarize PDF content with smart extraction',
     category: 'Advanced Tools', group: 'pdf', badge: 'AI',
-    apiEndpoint: '/api/ai-summarize', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'summaryType', label: 'Summary Type', type: 'select', options: [
@@ -597,9 +597,9 @@ const TOOLS = [
   },
   {
     id: 'translate', name: 'Translate', icon: 'languages',
-    description: 'Translate PDF documents into any language',
+    description: 'Temporarily unavailable until an on-device translation model is ready.',
     category: 'Advanced Tools', group: 'pdf', badge: 'AI',
-    apiEndpoint: '/api/translate', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'outputFormat', label: 'Output Format', type: 'select', options: [
@@ -711,7 +711,7 @@ const TOOLS = [
     id: 'workflow', name: 'Workflow Builder', icon: 'git-branch',
     description: 'Chain multiple PDF operations in a single pass',
     category: 'Advanced Tools', group: 'pdf', badge: 'Utility',
-    apiEndpoint: '/api/workflow', acceptedFiles: '.pdf',
+    acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
       { id: 'step1', label: 'Step 1 — Operation', type: 'select', options: [
@@ -752,7 +752,7 @@ const TOOLS = [
     id: 'background-remover', name: 'Background Remover', icon: 'image-minus',
     description: 'Automatically remove any background from images — solid, gradient, or complex',
     category: 'Image Tools', group: 'image', badge: 'AI',
-    apiEndpoint: '/api/background-remove', acceptedFiles: '.jpg,.jpeg,.png,.webp',
+    acceptedFiles: '.jpg,.jpeg,.png,.webp',
     multipleFiles: false, working: true, clientSide: true,
     options: []
   },
@@ -760,7 +760,7 @@ const TOOLS = [
     id: 'crop-image', name: 'Crop Image', icon: 'image-crop', clientSide: true,
     description: 'Crop and trim your images with precision controls',
     category: 'Image Tools', group: 'image', badge: 'Image',
-    apiEndpoint: '/api/crop-image', acceptedFiles: '.jpg,.jpeg,.png,.webp',
+    acceptedFiles: '.jpg,.jpeg,.png,.webp',
     multipleFiles: false, working: true,
     options: [
       { id: 'x',      label: 'X Offset (%)',  type: 'number', placeholder: '0'   },
@@ -773,7 +773,7 @@ const TOOLS = [
     id: 'resize-image', name: 'Image Resize', icon: 'maximize-2', clientSide: true,
     description: 'Resize images with presets: 1:1, 16:9, A4, HD, or custom',
     category: 'Image Tools', group: 'image', badge: 'Image',
-    apiEndpoint: '/api/resize-image', acceptedFiles: '.jpg,.jpeg,.png,.webp',
+    acceptedFiles: '.jpg,.jpeg,.png,.webp',
     multipleFiles: false, working: true,
     options: [
       { id: 'preset', label: 'Preset', type: 'select', options: [
@@ -791,7 +791,7 @@ const TOOLS = [
     id: 'image-filters', name: 'Image Filters', icon: 'sliders', clientSide: true,
     description: 'Apply grayscale, sepia, blur, brightness, contrast and more',
     category: 'Image Tools', group: 'image', badge: 'Image',
-    apiEndpoint: '/api/filters', acceptedFiles: '.jpg,.jpeg,.png,.webp',
+    acceptedFiles: '.jpg,.jpeg,.png,.webp',
     multipleFiles: false, working: true,
     options: [
       { id: 'filter', label: 'Filter Effect', type: 'select', options: [

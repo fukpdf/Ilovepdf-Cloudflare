@@ -8,6 +8,15 @@
 
   var _modules = Object.create(null);
   var _scriptPromises = Object.create(null);
+  var _unavailableLocalEngines = Object.freeze({
+    protect: 'PDF password protection is unavailable until a verified browser-only encryption engine is ready.',
+    unlock: 'PDF password removal is unavailable until a verified browser-only decryption engine is ready.',
+    translate: 'PDF translation is unavailable until an on-device translation model is ready.',
+  });
+
+  function getUnavailableMessage(toolId) {
+    return _unavailableLocalEngines[toolId] || '';
+  }
 
   function _loadScript(path) {
     if (_scriptPromises[path]) return _scriptPromises[path];
@@ -94,6 +103,14 @@
       return entry && entry.id === toolId;
     });
     if (!tool) return { ok: false, code: 'UNKNOWN_TOOL_MODULE' };
+    var unavailableMessage = getUnavailableMessage(toolId);
+    if (unavailableMessage) {
+      return {
+        ok: false,
+        code: 'LOCAL_ENGINE_UNAVAILABLE',
+        message: unavailableMessage + ' Your file was not sent anywhere.',
+      };
+    }
 
     try {
       if (!G.BrowserTools) {
@@ -176,6 +193,7 @@
     audit: audit,
     activate: activate,
     prepare: prepare,
+    getUnavailableMessage: getUnavailableMessage,
   });
 
   // Register only metadata. No processor/engine is loaded here.

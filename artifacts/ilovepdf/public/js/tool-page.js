@@ -160,7 +160,7 @@ window.addEventListener('popstate', () => {
   }
 });
 
-window.Flow = Flow; // exposed for queue-client and any future hookups
+window.Flow = Flow; // exposed for shared navigation and lifecycle hooks
 window.renderStep = renderStep; // exposed for i18n bridge re-render on language switch
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -456,8 +456,9 @@ function wireStepNav() {
       const step = el.getAttribute('data-go-step');
       if (!step) return;
       if (step === 'upload') {
-        // Going back to upload from preview/download = restart the flow.
-        clearAll();
+        // Going back to upload from preview/download starts a clean local session.
+        releaseToolMemory('restart');
+        if (typeof clearAllBursts === 'function') clearAllBursts();
       }
       Flow.navTo(step);
     });
@@ -819,7 +820,34 @@ function getBrandedUploadConfig(tool) {
   };
 }
 
+function renderUnavailableToolStep(tool, message) {
+  const container = document.getElementById('tool-content');
+  if (!container) return;
+  container.classList.add('ew-wide');
+  container.innerHTML = `
+    <div class="tool-page ew-preview-page">
+      ${toolHeaderBlock(tool, { hideStatus: true })}
+      <section class="status-card status-error" role="status" aria-live="polite">
+        <div>
+          <div class="status-card-title">Temporarily unavailable</div>
+          <div class="status-card-msg">${escapeHtml(message)} Your file cannot be selected or uploaded here.</div>
+        </div>
+      </section>
+      <a class="hero-btn" href="/">Browse other tools</a>
+    </div>`;
+  if (window.lucide) lucide.createIcons();
+}
+
 function renderUploadStep(tool) {
+  const unavailableMessage = window.ToolModuleRegistry &&
+    typeof window.ToolModuleRegistry.getUnavailableMessage === 'function'
+      ? window.ToolModuleRegistry.getUnavailableMessage(tool.id)
+      : '';
+  if (unavailableMessage) {
+    renderUnavailableToolStep(tool, unavailableMessage);
+    return;
+  }
+
   // Shared upload experience for all standard tools. Tool-specific processing,
   // editors, previews, options, SEO content, and result handling stay intact.
   return renderBrandedUploadStep(tool, getBrandedUploadConfig(tool));
@@ -1192,9 +1220,10 @@ async function runToolPreviewPreparation(tool, runId, startedAt, minimumMs) {
     showStatus(
       'error',
       'This tool is not ready for local processing',
-      preparation && preparation.code === 'LOCAL_ENGINE_UNAVAILABLE'
-        ? 'A verified browser-only processor is not available for this tool yet. Your file was not sent anywhere.'
-        : (preparation && preparation.message) || 'The browser could not prepare this tool. Your file was not sent anywhere.'
+      (preparation && preparation.message) ||
+        (preparation && preparation.code === 'LOCAL_ENGINE_UNAVAILABLE'
+          ? 'A verified browser-only processor is not available for this tool yet. Your file was not sent anywhere.'
+          : 'The browser could not prepare this tool. Your file was not sent anywhere.')
     );
   }
 }
@@ -1474,12 +1503,7 @@ function renderDownloadStep(tool) {
 
   if (deleteTrigger) {
     deleteTrigger.addEventListener('click', () => {
-      try {
-        if (window.ToolState && currentTool) {
-          const clear = window.ToolState.clearAfterDelivery || window.ToolState.clear;
-          if (typeof clear === 'function') clear.call(window.ToolState, slug);
-        }
-      } catch (_) {}
+      releaseToolMemory('result-cleared');
       Flow.navTo('upload');
     });
   }
@@ -1854,6 +1878,7 @@ function releaseToolMemory(reason, outputUrl) {
   if (window.WorkerPool && typeof window.WorkerPool.terminateAll === 'function') {
     try { window.WorkerPool.terminateAll(); } catch (_) {}
   }
+  if (typeof clearAllBursts === 'function') clearAllBursts();
   const livePreviewHost = document.getElementById('live-preview-host');
   if (livePreviewHost && window.LivePreview &&
       typeof window.LivePreview.unmount === 'function') {
@@ -1909,7 +1934,14 @@ function releaseToolMemory(reason, outputUrl) {
 // is retained briefly after the click and purged on the next lifecycle event.
 window.addEventListener('pagehide', function () {
   releaseToolMemory('pagehide');
-}, { once: true });
+});
+
+window.addEventListener('pageshow', function (event) {
+  if (!event.persisted) return;
+  Flow.result = null;
+  Flow.step = 'upload';
+  Flow.navTo('upload', { replace: true });
+});
 
 window.releaseToolMemory = releaseToolMemory;
 
@@ -2127,9 +2159,9 @@ function clearAll() {
   if (typeof clearAllBursts === 'function') clearAllBursts();
   // Clear the captured download-step result so a fresh upload starts clean.
   Flow.result = null;
-  // Wipe persisted state for this slug — sessionStorage + IndexedDB blobs.
+  // Clear any legacy state for this slug; new file persistence is disabled.
   if (window.ToolState && currentTool) ToolState.clear(Flow.baseSlug());
-  // Phase 3: also clear the cross-session resume pointer for this tool.
+  // Clear an old resume pointer if a legacy script has installed one.
   try { if (window.SessionPersist) window.SessionPersist.clearResume(); } catch (_) {}
 }
 
@@ -2987,8 +3019,7 @@ function clearAllBursts() {
   document.querySelectorAll('.burst-host.burst-persist').forEach((el) => el.remove());
 }
 
-// Expose globally so queue-client.js (or any future caller) can re-trigger
-// after dynamically appending its own download CTA.
+// Expose for the shared download step and any future local renderer.
 window.attachDownloadBurst = attachDownloadBurst;
 window.explodeAt = explodeAt;
 window.clearAllBursts = clearAllBursts;

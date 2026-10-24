@@ -98,7 +98,6 @@
       url: legacy.url,
       icon: legacy.icon,
       description: legacy.description,
-      apiEndpoint: legacy.apiEndpoint,
       acceptedFiles: legacy.acceptedFiles,
       multipleFiles: legacy.multipleFiles,
       clientSide: legacy.clientSide,

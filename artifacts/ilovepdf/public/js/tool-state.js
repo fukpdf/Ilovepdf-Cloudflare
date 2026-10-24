@@ -64,8 +64,8 @@
   }
 
   // Explicit delivery boundary: once a result has been delivered/download
-  // initiated, remove both the source files and generated result from
-  // persistent browser state. This never clears unrelated tool/cache data.
+  // initiated, remove source files and generated results from all app-owned
+  // file/temp stores. The separate CDN code cache is intentionally retained.
   async function clearAfterDelivery(slug) {
     if (!slug) return false;
     try {
