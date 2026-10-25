@@ -216,13 +216,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     return true;
   }
 
+  function openSpecialToolPage(routePath, documentPath) {
+    const target = new URL(routePath || window.location.href, window.location.origin);
+    if (window.SharedNavigation && typeof window.SharedNavigation.navigate === 'function') {
+      window.SharedNavigation.navigate(target, { push: false }).catch(() => {
+        safeRedirect(documentPath || target.href);
+      });
+      return true;
+    }
+    return safeRedirect(documentPath || target.href);
+  }
+
   // Registry-owned standalone routes replace the legacy SLUG_MAP special-route table.
   const slug = (window.location.pathname || '/').replace(/^\/+|\/+$/g, '').toLowerCase();
   const registryRoute = window.ToolRegistry && window.ToolRegistry.isReady()
     ? window.ToolRegistry.getBySlug(slug.replace(/\/(preview|download)$/i, ''))
     : null;
   if (registryRoute && registryRoute.specialRoute) {
-    if (safeRedirect(registryRoute.specialRoute)) return;
+    if (openSpecialToolPage(
+      window.location.pathname + window.location.search,
+      registryRoute.specialRoute
+    )) return;
   }
 
   // Unit 5: resolve identity from the authoritative registry after its readiness barrier.
@@ -479,11 +493,14 @@ function buildOptionsHtml(tool) {
           <select class="form-select" name="${opt.id}" id="opt-${opt.id}">${opts}</select>
         </div>`;
     }
+    const constraints = ['min', 'max', 'step'].map(function (key) {
+      return opt[key] !== undefined ? ` ${key}="${escapeHtml(String(opt[key]))}"` : '';
+    }).join('');
     return `
       <div class="form-group">
         <label class="form-label">${opt.label}</label>
         <input class="form-input" type="${opt.type}" name="${opt.id}" id="opt-${opt.id}"
-          placeholder="${opt.placeholder || ''}" ${opt.required ? 'required' : ''}>
+          placeholder="${opt.placeholder || ''}"${constraints} ${opt.required ? 'required' : ''}>
       </div>`;
   }).join('');
   return `
@@ -799,8 +816,10 @@ function renderBrandedUploadStep(tool, config) {
 // power users. SEO content stays here on the canonical page.
 function getBrandedUploadConfig(tool) {
   const isImage = tool.group === 'image';
-  const fileType = isImage ? 'image' : 'PDF';
-  const noun = tool.multipleFiles ? `${fileType} files` : fileType;
+  const fileType = isImage ? 'image' : (tool.id === 'zip-builder' ? 'file' : 'PDF');
+  const noun = tool.multipleFiles
+    ? (fileType === 'file' ? 'files' : `${fileType} files`)
+    : fileType;
   const operation = tool.name.replace(/\s+/g, ' ').trim();
   return {
     pageClass: 'ilpdf-branded-tool-upload',
@@ -1741,8 +1760,10 @@ async function handleFiles(fileList) {
   const invalidFile = incoming.find(function (file) {
     const name = String(file.name || '').toLowerCase();
     const mimeExt = mimeExtensions[String(file.type || '').toLowerCase()];
-    return accepted.length && !accepted.some(function (extension) {
-      return name.endsWith(extension) || mimeExt === extension;
+    return accepted.length && !accepted.includes('*/*') && !accepted.some(function (rule) {
+      if (rule.startsWith('.')) return name.endsWith(rule) || mimeExt === rule;
+      if (rule.endsWith('/*')) return String(file.type || '').toLowerCase().startsWith(rule.slice(0, -1));
+      return String(file.type || '').toLowerCase() === rule;
     });
   });
   if (invalidFile) {
@@ -1849,15 +1870,20 @@ function closePageOrganizer() {
   if (list) list.style.display = '';
 }
 
+function revokeToolObjectURL(url) {
+  if (!url) return;
+  try {
+    if (window.ObjectURLRegistry) window.ObjectURLRegistry.revoke(url);
+    else URL.revokeObjectURL(url);
+  } catch (_) {}
+}
+
 function releaseSelectedFiles() {
   const previous = selectedFiles;
   selectedFiles = [];
   previous.forEach(function (entry) {
     if (!entry || !entry._thumbUrl) return;
-    try {
-      if (window.ObjectURLRegistry) window.ObjectURLRegistry.revoke(entry._thumbUrl);
-      else URL.revokeObjectURL(entry._thumbUrl);
-    } catch (_) {}
+    revokeToolObjectURL(entry._thumbUrl);
   });
   closePageOrganizer();
   document.querySelectorAll('#tool-content input[type="file"]').forEach(function (input) {
@@ -1891,10 +1917,7 @@ function releaseToolMemory(reason, outputUrl) {
     .forEach(function (node) {
       var url = node.getAttribute('href') || node.getAttribute('src');
       if (!url) return;
-      try {
-        if (window.ObjectURLRegistry) window.ObjectURLRegistry.revoke(url);
-        else URL.revokeObjectURL(url);
-      } catch (_) {}
+      revokeToolObjectURL(url);
     });
 
   releaseSelectedFiles();
@@ -1916,10 +1939,7 @@ function releaseToolMemory(reason, outputUrl) {
 
   if (reason === 'downloaded') {
     if (outputUrl && String(outputUrl).indexOf('blob:') === 0) {
-      try {
-        if (window.ObjectURLRegistry) window.ObjectURLRegistry.revoke(outputUrl);
-        else URL.revokeObjectURL(outputUrl);
-      } catch (_) {}
+      revokeToolObjectURL(outputUrl);
     }
     const area = document.getElementById('result-area');
     if (area) {
@@ -1969,7 +1989,11 @@ function renderFileList() {
     if (isImage) {
       // Create blob URL once per file entry; reuse on re-renders (rotate, reorder).
       // Revoked in removeFile() and clearAll() to prevent accumulation.
-      if (!entry._thumbUrl) entry._thumbUrl = URL.createObjectURL(f);
+       if (!entry._thumbUrl) {
+         entry._thumbUrl = window.ObjectURLRegistry
+           ? window.ObjectURLRegistry.create(f, 'tool-file-preview')
+           : URL.createObjectURL(f);
+       }
       thumb = `<div class="file-thumb-wrap"><img src="${entry._thumbUrl}" alt="" style="transform:rotate(${entry.rotation}deg)"></div>`;
     } else if (isPdf) {
       // PDF first-page preview (rendered async right after this innerHTML).
@@ -2138,7 +2162,7 @@ function rotateFile(index) {
 
 function removeFile(index) {
   const _rem = selectedFiles[index];
-  if (_rem && _rem._thumbUrl) { try { URL.revokeObjectURL(_rem._thumbUrl); } catch (_) {} }
+  if (_rem && _rem._thumbUrl) revokeToolObjectURL(_rem._thumbUrl);
   selectedFiles.splice(index, 1);
   renderFileList();
   if (selectedFiles.length === 0) {
@@ -2148,7 +2172,7 @@ function removeFile(index) {
 }
 
 function clearAll() {
-  selectedFiles.forEach(function (e) { if (e._thumbUrl) { try { URL.revokeObjectURL(e._thumbUrl); } catch (_) {} } });
+  selectedFiles.forEach(function (e) { if (e._thumbUrl) revokeToolObjectURL(e._thumbUrl); });
   selectedFiles = [];
   renderFileList();
   closePageOrganizer();
@@ -3648,7 +3672,13 @@ window.loadToolPage = function loadToolPage(path) {
     ? (window.ToolRegistry.getBySlug(rawSlug) || window.ToolRegistry.get(rawSlug))
     : null;
   if (registryMeta && registryMeta.specialRoute) {
-    window.location.href = registryMeta.specialRoute;
+    if (window.SharedNavigation && typeof window.SharedNavigation.navigate === 'function') {
+      window.SharedNavigation.navigate(path, { push: false }).catch(() => {
+        window.location.replace(registryMeta.specialRoute);
+      });
+    } else {
+      window.location.replace(registryMeta.specialRoute);
+    }
     return;
   }
 

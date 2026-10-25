@@ -39,11 +39,11 @@ window.SLUG_MAP = {
   'crop-image':        { id:'crop-image'    },
   'resize-image':      { id:'resize-image'  },
   'image-filters':     { id:'image-filters' },
-  'image-compressor':  { id:'image-compressor',  special:'/image-compressor.html'  },
-  'image-converter':   { id:'image-converter',   special:'/image-converter.html'   },
+  'image-compressor':  { id:'image-compressor' },
+  'image-converter':   { id:'image-converter' },
   'qr-code-generator': { id:'qr-code-generator', special:'/qr-code-generator.html' },
   'barcode-generator': { id:'barcode-generator', special:'/barcode-generator.html' },
-  'zip-builder':       { id:'zip-builder',       special:'/zip-builder.html'       },
+  'zip-builder':       { id:'zip-builder' },
 };
 
 // Resolve current page URL → tool-id. Falls back through:
@@ -472,7 +472,7 @@ const TOOLS = [
   {
     id: 'repair', name: 'Repair', icon: 'wrench',
     description: 'Fix corrupted or damaged PDF files',
-    category: 'Advanced Tools', group: 'pdf', badge: 'Utility',
+    category: 'Advanced Tools', group: 'utility', badge: 'Utility',
     acceptedFiles: '.pdf',
     multipleFiles: false, working: true, clientSide: true,
     options: [
@@ -805,4 +805,55 @@ const TOOLS = [
       ]}
     ]
   },
+  {
+    id: 'image-compressor', name: 'Image Compressor', icon: 'minimize-2', clientSide: true,
+    description: 'Compress JPG, PNG, and WebP images locally in your browser',
+    category: 'Image Tools', group: 'image', badge: 'Image',
+    acceptedFiles: '.jpg,.jpeg,.png,.webp',
+    multipleFiles: false, working: true,
+    options: [
+      { id: 'quality', label: 'Quality (10–100)', type: 'number', placeholder: '85', min: 10, max: 100, step: 1 },
+      { id: 'format', label: 'Output format', type: 'select', options: [
+        { value: 'original', label: 'Keep original format' },
+        { value: 'image/jpeg', label: 'JPEG' },
+        { value: 'image/png', label: 'PNG' },
+        { value: 'image/webp', label: 'WebP' }
+      ]}
+    ]
+  },
+  {
+    id: 'image-converter', name: 'Image Converter', icon: 'images', clientSide: true,
+    description: 'Convert one or more images to JPG, PNG, or WebP on your device',
+    category: 'Image Tools', group: 'image', badge: 'Image',
+    acceptedFiles: '.jpg,.jpeg,.png,.webp',
+    multipleFiles: true, working: true,
+    options: [
+      { id: 'format', label: 'Convert to', type: 'select', options: [
+        { value: 'image/jpeg', label: 'JPEG' },
+        { value: 'image/png', label: 'PNG' },
+        { value: 'image/webp', label: 'WebP' }
+      ]}
+    ]
+  },
+  {
+    id: 'zip-builder', name: 'ZIP Builder', icon: 'archive', clientSide: true,
+    description: 'Combine files into a ZIP archive directly in your browser',
+    category: 'Advanced Tools', group: 'utility', badge: 'Utility',
+    acceptedFiles: '*/*',
+    multipleFiles: true, working: true,
+    options: [
+      { id: 'archiveName', label: 'Archive name', type: 'text', placeholder: 'ILovePDF-Archive' },
+      { id: 'compressionLevel', label: 'Compression level', type: 'select', options: [
+        { value: '1', label: 'Fast' },
+        { value: '6', label: 'Balanced' },
+        { value: '9', label: 'Smallest file' }
+      ]}
+    ]
+  },
 ];
+
+// Runtime modules load selected processors through the window boundary.
+// Keep the legacy lexical binding for the page while exposing its metadata
+// to the lazy module registry and execution audits.
+window.TOOLS = TOOLS;
+window.CATEGORIES = CATEGORIES;

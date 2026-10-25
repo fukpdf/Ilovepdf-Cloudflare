@@ -56,7 +56,8 @@
   }
 
   function specialToolPageForUrl(url) {
-    var pathname = decodeURIComponent(url.pathname || '/');
+    var pathname = url.pathname || '/';
+    try { pathname = decodeURIComponent(pathname); } catch (_) {}
     var slug = pathname.replace(/^\/+|\/+$/g, '').toLowerCase().replace(/\.html$/i, '');
     var legacyMeta = G.SLUG_MAP && G.SLUG_MAP[slug];
     var registryTool = G.ToolRegistry && G.ToolRegistry.isReady()

@@ -120,6 +120,10 @@
         return { ok: false, code: 'LOCAL_ENGINE_UNAVAILABLE' };
       }
 
+      if (toolId === 'image-compressor' || toolId === 'image-converter' || toolId === 'zip-builder') {
+        await _loadScript('/js/local-file-tools.js');
+      }
+
       register(tool);
       if (!G.BrowserTools.supports(toolId)) {
         return { ok: false, code: 'LOCAL_ENGINE_UNAVAILABLE' };
@@ -137,7 +141,7 @@
 
       // Preview code is loaded only after the user selects a file. Image files
       // use native browser decoding; PDF tools share these preview modules.
-      if (tool.group !== 'image') {
+      if (tool.group === 'pdf') {
         await Promise.all([
           _loadScript('/js/live-preview.js'),
           _loadScript('/js/page-organizer.js'),

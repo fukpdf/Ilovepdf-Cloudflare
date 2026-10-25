@@ -366,7 +366,11 @@
       update();
     }
 
-    document.addEventListener('DOMContentLoaded', wireFx);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', wireFx, { once: true });
+    } else {
+      wireFx();
+    }
   })();
   </script>
   <script src="/js/special-page-i18n.js" defer></script>

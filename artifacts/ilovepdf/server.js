@@ -179,7 +179,11 @@ app.get('/:page.html', (req, res, next) => {
 });
 
 // Clean URLs for static content
-const STATIC_PAGES = ['about', 'privacy', 'terms', 'disclaimer', 'blog', 'dashboard', 'tools', 'offline', 'n2w', 'numbers-to-words', 'currency-converter'];
+const STATIC_PAGES = [
+  'about', 'privacy', 'terms', 'disclaimer', 'blog', 'dashboard', 'tools',
+  'offline', 'n2w', 'numbers-to-words', 'currency-converter',
+  'qr-code-generator', 'barcode-generator',
+];
 STATIC_PAGES.forEach(slug => {
   app.get(`/${slug}`, (_req, res, next) => {
     const filePath = path.join(PUBLIC_DIR, `${slug}.html`);

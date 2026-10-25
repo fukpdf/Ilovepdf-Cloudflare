@@ -4536,6 +4536,8 @@
       compare: ['pdf-lib', 'pdfjs'],
       ocr: ['pdfjs', 'tesseract'],
       'scan-to-pdf': ['pdf-lib', 'tesseract', 'jszip'],
+      'image-converter': ['jszip'],
+      'zip-builder': ['jszip'],
       'ai-summarize': ['pdfjs'],
       workflow: ['pdf-lib', 'worker-pool'],
       redact: ['worker-pool'],
@@ -4562,6 +4564,15 @@
   }
 
   function supports(toolId) { return Object.prototype.hasOwnProperty.call(HANDLERS, toolId); }
+
+  function registerHandler(toolId, handler) {
+    if (typeof toolId !== 'string' || !/^[a-z0-9-]+$/.test(toolId) || typeof handler !== 'function') {
+      throw new TypeError('Invalid browser tool handler registration.');
+    }
+    if (supports(toolId)) return HANDLERS[toolId] === handler;
+    HANDLERS[toolId] = handler;
+    return true;
+  }
 
   // Phase 1 execution profile: one authoritative capability query for the
   // shared platform. This reports actual current capabilities only; it does
@@ -4666,6 +4677,7 @@
       '.jpg': ['image/jpeg', 'image/jpg'],
       '.jpeg': ['image/jpeg', 'image/jpg'],
       '.png': ['image/png'],
+      '.webp': ['image/webp'],
       '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
       '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
       '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
@@ -4832,7 +4844,9 @@
       'crop-image': 100, 'resize-image': 100, 'image-filters': 100,
     };
     const _minBytes = _MIN_SIZES[toolId] !== undefined ? _MIN_SIZES[toolId] : 200;
-    const filename = brandedFilename(files[0].name, ext);
+    const filename = result && typeof result.filename === 'string' && result.filename
+      ? result.filename
+      : brandedFilename(files[0].name, ext);
     const output = { blob, filename };
     const validation = await validateOutput(toolId, output);
     if (!validation.ok) throw new Error(validation.msg || 'OUTPUT_VALIDATION_FAILED');
@@ -4847,7 +4861,9 @@
     validateOutput,
     process,
     prewarm,
+    registerHandler,
     brandedFilename,
     _loadPdfLib: loadPdfLib,
+    _loadJsZip: loadJsZip,
   };
 })();
