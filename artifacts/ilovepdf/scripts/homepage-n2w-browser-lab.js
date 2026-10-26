@@ -64,8 +64,11 @@ try {
   await convert('12.34', 'twelve point three four');
 
   await page.setViewportSize({ width: 390, height: 844 });
+  const mobileToggle = page.locator('#calc-toggle');
+  if (await mobileToggle.isVisible()) await mobileToggle.click();
+  await page.locator('#calc-input').waitFor({ state: 'visible', timeout: 10000 });
   await convert('42', 'forty-two');
-  pass('mobile viewport conversion works without a separate tool page');
+  pass('mobile viewport conversion works after opening the homepage calculator panel');
 
   if (failures.length) throw new Error(failures.join('\n'));
   console.log('REAL HOMEPAGE LAB PASSED: ' + origin);
