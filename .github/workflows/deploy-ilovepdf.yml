@@ -1,0 +1,137 @@
+name: Deploy ILovePDF Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ilovepdf-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: artifacts/ilovepdf
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: artifacts/ilovepdf/package-lock.json
+
+      - name: Stamp deployment version
+        run: printf '%s\n' "$GITHUB_SHA" > public/deploy-version.txt
+
+      - name: Assemble homepage and verify converter inclusion
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/assemble-homepage-index.js
+          if grep -q 'DecompressionStream' public/index.html; then
+            echo '::error::Homepage is still the compressed chunk loader'
+            exit 1
+          fi
+          grep -q 'home-fast-boot' public/index.html || {
+            echo '::error::Homepage is missing home-fast-boot'
+            exit 1
+          }
+          grep -q '/js/n2w-converter.js' public/index.html || {
+            echo '::error::Homepage build removed the Numbers-to-Words engine'
+            exit 1
+          }
+          node scripts/homepage-deep-audit-check.js
+          node --check scripts/assemble-homepage-index.js
+          node --check public/js/home.js
+          node --check public/js/n2w-converter.js
+
+      - name: Install dependencies
+        shell: bash
+        run: npm ci --omit=dev || npm install --omit=dev --no-audit
+
+      - name: Run regression tests
+        run: npm test
+
+      - name: Run security and file-lifecycle audit
+        run: npm run audit:security
+
+      - name: Configure Firebase credentials
+        shell: bash
+        env:
+          SA_SECRET_1: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          SA_SECRET_2: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ILOVEPDF_WEB }}
+          SA_SECRET_3: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          SA_SECRET_4: ${{ secrets.GCP_SA_KEY }}
+          TOKEN_SECRET: ${{ secrets.FIREBASE_TOKEN }}
+          OVERRIDE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          CRED_JSON="${SA_SECRET_1:-${SA_SECRET_2:-${SA_SECRET_3:-${SA_SECRET_4:-}}}}"
+          if [ -n "$CRED_JSON" ]; then
+            printf '%s' "$CRED_JSON" > /tmp/firebase-sa.json
+            echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json" >> "$GITHUB_ENV"
+            DETECTED_PROJECT="$(node -e 'try { console.log(JSON.parse(require("fs").readFileSync("/tmp/firebase-sa.json","utf8")).project_id || "") } catch (_) { console.log("") }')"
+          else
+            DETECTED_PROJECT=""
+          fi
+          TARGET_PROJECT="${OVERRIDE_PROJECT_ID:-${DETECTED_PROJECT:-ilovepdf-web}}"
+          echo "FIREBASE_TARGET_PROJECT=$TARGET_PROJECT" >> "$GITHUB_ENV"
+          if [ -z "$CRED_JSON" ] && [ -z "$TOKEN_SECRET" ]; then
+            echo '::error::No Firebase deployment credentials configured. Set FIREBASE_SERVICE_ACCOUNT (recommended) or FIREBASE_TOKEN in repository Actions secrets.'
+            exit 1
+          fi
+          if [ -n "$TOKEN_SECRET" ]; then
+            echo "::add-mask::$TOKEN_SECRET"
+            echo "FIREBASE_TOKEN_VALUE=$TOKEN_SECRET" >> "$GITHUB_ENV"
+          fi
+
+      - name: Deploy to Firebase Hosting
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${FIREBASE_TOKEN_VALUE:-}" ]; then
+            npx --yes firebase-tools@latest deploy --only hosting --project "$FIREBASE_TARGET_PROJECT" --token "$FIREBASE_TOKEN_VALUE" --non-interactive
+          else
+            npx --yes firebase-tools@latest deploy --only hosting --project "$FIREBASE_TARGET_PROJECT" --non-interactive
+          fi
+
+      - name: Verify deployed homepage converter
+        shell: bash
+        run: |
+          set -euo pipefail
+          origin="https://ilovepdf-web.web.app"
+          for path in "/" "/js/home.js" "/js/n2w-converter.js"; do
+            code="$(curl -L --retry 3 --retry-all-errors --connect-timeout 8 --max-time 25 -sS -o /tmp/response -w '%{http_code}' "$origin$path")"
+            echo "HTTP $code $origin$path"
+            [ "$code" = "200" ] || {
+              echo "::error::Live asset check failed for $origin$path"
+              exit 1
+            }
+            if [ "$path" = "/js/n2w-converter.js" ]; then
+              grep -q 'convertNumberToWords' /tmp/response || {
+                echo '::error::Converter asset did not expose the expected conversion function'
+                exit 1
+              }
+            fi
+          done
+          html="$(curl -fLsS --retry 3 --retry-all-errors --connect-timeout 8 --max-time 25 "$origin/")"
+          echo "$html" | grep -q '/js/n2w-converter.js' || {
+            echo '::error::Live homepage HTML does not include the Numbers-to-Words engine'
+            exit 1
+          }
+          deployed_sha="$(curl -fLsS --retry 3 --retry-all-errors --connect-timeout 8 --max-time 25 "$origin/deploy-version.txt" | tr -d '\r\n')"
+          [ "$deployed_sha" = "$GITHUB_SHA" ] || {
+            echo "::error::Deployment SHA mismatch: expected $GITHUB_SHA, got $deployed_sha"
+            exit 1
+          }
+          echo "Verified deployment $deployed_sha and converter asset availability."
