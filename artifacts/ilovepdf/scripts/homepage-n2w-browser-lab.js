@@ -3,7 +3,10 @@
  * Real Chromium lab test for the production homepage's inline Numbers-to-Words calculator.
  * Run after deploy with N2W_BASE_URL set to the deployed origin.
  */
-import { chromium } from 'playwright';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const playwrightPath = require.resolve('playwright', { paths: [process.env.PLAYWRIGHT_INSTALL_DIR || process.cwd()] });
+const { chromium } = require(playwrightPath);
 
 const origin = (process.env.N2W_BASE_URL || 'https://ilovepdf-web.web.app').replace(/\/$/, '');
 const browser = await chromium.launch({ headless: true });
