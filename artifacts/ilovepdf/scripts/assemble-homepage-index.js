@@ -59,7 +59,8 @@ const TOOL_ONLY_HOMEPAGE_SCRIPTS = new Set([
   '/js/analytics-sync.js',
   '/js/runtime-recovery.js',
   '/js/runtime-perf-safety.js',
-  '/js/n2w-converter.js',
+  // Keep the lightweight Number-to-Words engine on the homepage runtime list.
+  // The homepage calculator is interactive, and excluding this file leaves its API undefined.
   '/js/runtime-protection.js',
   '/js/runtime-shield-core.js',
   '/js/runtime-shield-integrity.js',
