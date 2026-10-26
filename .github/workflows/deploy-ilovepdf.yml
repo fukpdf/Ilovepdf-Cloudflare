@@ -46,10 +46,19 @@ jobs:
             echo '::error::Homepage is missing home-fast-boot'
             exit 1
           }
-          grep -q '/js/n2w-converter.js' public/index.html || {
-            echo '::error::Homepage build removed the Numbers-to-Words engine'
+          grep -q '/js/home.js' public/index.html || {
+            echo '::error::Homepage build removed its calculator controller'
             exit 1
           }
+          grep -q '/js/n2w-converter.js' public/js/home.js || {
+            echo '::error::Homepage controller has no lazy-load path for Numbers-to-Words'
+            exit 1
+          }
+          test -s public/js/n2w-converter.js || {
+            echo '::error::Numbers-to-Words engine asset is missing from public output'
+            exit 1
+          }
+          node scripts/homepage-n2w-regression-check.js
           node scripts/homepage-deep-audit-check.js
           node --check scripts/assemble-homepage-index.js
           node --check public/js/home.js
@@ -125,8 +134,17 @@ jobs:
             fi
           done
           html="$(curl -fLsS --retry 3 --retry-all-errors --connect-timeout 8 --max-time 25 "$origin/")"
-          echo "$html" | grep -q '/js/n2w-converter.js' || {
-            echo '::error::Live homepage HTML does not include the Numbers-to-Words engine'
+          echo "$html" | grep -q '/js/home.js' || {
+            echo '::error::Live homepage HTML does not include the homepage calculator controller'
+            exit 1
+          }
+          live_home_js="$(curl -fLsS --retry 3 --retry-all-errors --connect-timeout 8 --max-time 25 "$origin/js/home.js")"
+          echo "$live_home_js" | grep -q '/js/n2w-converter.js' || {
+            echo '::error::Live homepage controller does not contain the lazy-load path for Numbers-to-Words'
+            exit 1
+          }
+          echo "$live_home_js" | grep -q 'Timed out loading the Numbers-to-Words engine' || {
+            echo '::error::Live homepage controller is missing converter load-timeout recovery'
             exit 1
           }
           deployed_sha="$(curl -fLsS --retry 3 --retry-all-errors --connect-timeout 8 --max-time 25 "$origin/deploy-version.txt" | tr -d '\r\n')"
