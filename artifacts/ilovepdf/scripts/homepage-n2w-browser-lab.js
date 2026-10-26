@@ -8,7 +8,10 @@ const require = createRequire(import.meta.url);
 const playwrightPath = require.resolve('playwright', { paths: [process.env.PLAYWRIGHT_INSTALL_DIR || process.cwd()] });
 const { chromium } = require(playwrightPath);
 
-const origin = (process.env.N2W_BASE_URL || 'https://ilovepdf-web.web.app').replace(/\/$/, '');
+const baseUrl = new URL(process.env.N2W_BASE_URL || 'https://ilovepdf-web.web.app/');
+const origin = baseUrl.origin;
+const homepageUrl = new URL('/', baseUrl);
+homepageUrl.search = baseUrl.search;
 const browser = await chromium.launch({ headless: true });
 const failures = [];
 const pass = (message) => console.log('PASS:', message);
@@ -24,11 +27,12 @@ try {
   });
   page.on('pageerror', error => failures.push('Uncaught browser error: ' + error.message));
 
-  const response = await page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+  const response = await page.goto(homepageUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 30000 });
   if (!response || response.status() !== 200) throw new Error('Homepage navigation failed: HTTP ' + (response?.status() ?? 'no response'));
   await page.locator('#calc-input').waitFor({ state: 'visible', timeout: 20000 });
   await page.locator('#calc-go').waitFor({ state: 'visible', timeout: 20000 });
-  pass('homepage loads and the inline calculator is visible');
+  await page.waitForFunction(() => window.__ILOVE_HOME_RUNTIME_READY === true, { timeout: 30000 });
+  pass('homepage loads and the inline calculator runtime is ready');
 
   async function convert(input, expected) {
     const inputBox = page.locator('#calc-input');
