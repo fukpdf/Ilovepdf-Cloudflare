@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: ilovepdf-production-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -63,10 +63,6 @@ jobs:
           node --check scripts/assemble-homepage-index.js
           node --check public/js/home.js
           node --check public/js/n2w-converter.js
-
-      - name: Install dependencies
-        shell: bash
-        run: npm ci --omit=dev || npm install --omit=dev --no-audit
 
       - name: Run regression tests
         run: npm test
@@ -160,6 +156,6 @@ jobs:
           N2W_BASE_URL: https://ilovepdf-web.web.app
         run: |
           set -euo pipefail
-          npm install --no-save --no-audit --no-fund playwright@1.56.0
-          npx playwright install chromium
-          node scripts/homepage-n2w-browser-lab.js
+          npm install --prefix /tmp/n2w-playwright --no-audit --no-fund playwright@1.56.0
+          /tmp/n2w-playwright/node_modules/.bin/playwright install chromium
+          PLAYWRIGHT_INSTALL_DIR=/tmp/n2w-playwright node scripts/homepage-n2w-browser-lab.js
