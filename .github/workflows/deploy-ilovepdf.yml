@@ -70,6 +70,30 @@ jobs:
       - name: Run security and file-lifecycle audit
         run: npm run audit:security
 
+      - name: Install Playwright Chromium for real-user lab tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix /tmp/n2w-playwright --no-audit --no-fund playwright@1.56.0
+          /tmp/n2w-playwright/node_modules/.bin/playwright install chromium
+
+      - name: Run real-browser lab against assembled homepage before deployment
+        shell: bash
+        env:
+          N2W_BASE_URL: http://127.0.0.1:4173/?static-hosting-test=1
+          PLAYWRIGHT_INSTALL_DIR: /tmp/n2w-playwright
+        run: |
+          set -euo pipefail
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory public >/tmp/n2w-homepage-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS 'http://127.0.0.1:4173/?static-hosting-test=1' >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS 'http://127.0.0.1:4173/?static-hosting-test=1' >/dev/null
+          node scripts/homepage-n2w-browser-lab.js
+
       - name: Configure Firebase credentials
         shell: bash
         env:
@@ -156,6 +180,4 @@ jobs:
           N2W_BASE_URL: https://ilovepdf-web.web.app
         run: |
           set -euo pipefail
-          npm install --prefix /tmp/n2w-playwright --no-audit --no-fund playwright@1.56.0
-          /tmp/n2w-playwright/node_modules/.bin/playwright install chromium
           PLAYWRIGHT_INSTALL_DIR=/tmp/n2w-playwright node scripts/homepage-n2w-browser-lab.js
