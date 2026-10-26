@@ -31,7 +31,7 @@ try {
   if (!response || response.status() !== 200) throw new Error('Homepage navigation failed: HTTP ' + (response?.status() ?? 'no response'));
   await page.locator('#calc-input').waitFor({ state: 'visible', timeout: 20000 });
   await page.locator('#calc-go').waitFor({ state: 'visible', timeout: 20000 });
-  await page.waitForFunction(() => window.__ILOVE_HOME_RUNTIME_READY === true, { timeout: 30000 });
+  await page.waitForFunction(() => window.__ILOVE_HOME_RUNTIME_READY === true, null, { timeout: 30000 });
   pass('homepage loads and the inline calculator runtime is ready');
 
   async function convert(input, expected) {
