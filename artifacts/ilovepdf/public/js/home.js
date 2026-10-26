@@ -334,21 +334,41 @@ function wireCalc(){
       if (!window.__iloveN2WConverterLoad) {
         window.__iloveN2WConverterLoad = new Promise((resolve, reject) => {
           const script = document.createElement('script');
-          script.src = '/js/n2w-converter.js';
-          script.async = true;
-          script.onload = () => {
-            if (typeof window.convertNumberToWords === 'function') resolve();
-            else reject(new Error('Converter script loaded without exposing its API.'));
+          let settled = false;
+          const finish = (error) => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(loadTimer);
+            script.onload = null;
+            script.onerror = null;
+            if (error) reject(error);
+            else resolve();
           };
-          script.onerror = () => reject(new Error('Could not load the converter script.'));
+          // Use an origin-qualified URL and fail fast instead of leaving the
+          // homepage calculator stuck forever if the asset request stalls.
+          script.src = new URL('/js/n2w-converter.js', window.location.href).href;
+          script.async = true;
+          const loadTimer = window.setTimeout(() => {
+            script.remove();
+            finish(new Error('Timed out loading the Numbers-to-Words engine.'));
+          }, 12000);
+          script.onload = () => {
+            if (typeof window.convertNumberToWords === 'function') finish();
+            else finish(new Error('Converter script loaded without exposing its API.'));
+          };
+          script.onerror = () => {
+            script.remove();
+            finish(new Error('Could not load the converter script.'));
+          };
           document.head.appendChild(script);
         }).catch(error => {
           window.__iloveN2WConverterLoad = null;
+          console.error('[homepage-n2w] converter load failed:', error);
           throw error;
         });
       }
       window.__iloveN2WConverterLoad.then(run).catch(() => {
-        out.textContent = 'Could not load the converter. Please try again.';
+        out.textContent = 'Converter could not load. Check your connection and tap Convert to retry.';
         out.classList.add('err');
       });
       return;
