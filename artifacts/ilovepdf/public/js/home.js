@@ -327,7 +327,31 @@ function wireCalc(){
     if (wrap) wrap.hidden = false;
     if (!val) { out.textContent = (window.t ? window.t('errors.enter_number') : 'Please enter a number.'); out.classList.add('err'); return; }
     if (typeof window.convertNumberToWords !== 'function') {
-      out.textContent = (window.t ? window.t('calc.converter_loading') : 'Converter is loading\u2026'); out.classList.add('err'); return;
+      // Keep the homepage lightweight: load the converter only when the user
+      // first requests a conversion, then automatically resume that request.
+      out.textContent = (window.t ? window.t('calc.converter_loading') : 'Loading converter…');
+      out.classList.add('err');
+      if (!window.__iloveN2WConverterLoad) {
+        window.__iloveN2WConverterLoad = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = '/js/n2w-converter.js';
+          script.async = true;
+          script.onload = () => {
+            if (typeof window.convertNumberToWords === 'function') resolve();
+            else reject(new Error('Converter script loaded without exposing its API.'));
+          };
+          script.onerror = () => reject(new Error('Could not load the converter script.'));
+          document.head.appendChild(script);
+        }).catch(error => {
+          window.__iloveN2WConverterLoad = null;
+          throw error;
+        });
+      }
+      window.__iloveN2WConverterLoad.then(run).catch(() => {
+        out.textContent = 'Could not load the converter. Please try again.';
+        out.classList.add('err');
+      });
+      return;
     }
     lastNumber = val;
     const res = window.convertNumberToWords(val, {
