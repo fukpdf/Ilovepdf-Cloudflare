@@ -27,8 +27,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: artifacts/ilovepdf/package-lock.json
+          # Do not enable setup-node's npm cache until this repository has a committed lockfile.
+          # The previous cache lookup failed the entire job before build/deploy could run.
 
       - name: Stamp deployment version
         run: printf '%s\n' "$GITHUB_SHA" > public/deploy-version.txt
